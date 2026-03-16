@@ -1,0 +1,4 @@
+[submodule "convoke-design"]
+	path = docs/design
+	url = git@github.com:schliz/convoke-design.git
+	branch = master
