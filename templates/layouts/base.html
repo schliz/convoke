@@ -1,0 +1,42 @@
+{{ define "layout" }}
+<!DOCTYPE html>
+<html lang="en" data-theme="convoke-light">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ .Layout.CSRFToken }}">
+    <title>{{ .Layout.Title }} — Convoke</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ cssFile }}">
+    <script src="/static/js/htmx.min.js"></script>
+    <script>
+    (function() {
+        var theme = localStorage.getItem('theme') ||
+            (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'convoke-dark' : 'convoke-light');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    function toggleTheme() {
+        var current = document.documentElement.getAttribute('data-theme');
+        var next = current === 'convoke-dark' ? 'convoke-light' : 'convoke-dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+    }
+    </script>
+</head>
+<body class="min-h-screen bg-base-100 font-['Public_Sans',sans-serif]">
+    {{ template "nav" .Layout }}
+    <main>{{ template "content" . }}</main>
+    <div id="modal" style="display:none"></div>
+    <div id="toast-zone" class="toast toast-end toast-top z-50"></div>
+    <script>
+    document.body.addEventListener('htmx:configRequest', function(event) {
+        var token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        event.detail.headers['X-CSRF-Token'] = token;
+    });
+    </script>
+</body>
+</html>
+{{ end }}

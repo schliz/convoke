@@ -1,0 +1,18 @@
+{{ define "nav" }}
+<div class="navbar bg-base-200 shadow-sm">
+    <div class="flex-1">
+        <a href="/" class="btn btn-ghost text-xl gap-2">
+            <span class="material-symbols-outlined text-primary">group_work</span>
+            Convoke
+        </a>
+    </div>
+    <div class="flex-none gap-2">
+        <button onclick="toggleTheme()" class="btn btn-ghost btn-circle">
+            <span class="material-symbols-outlined">dark_mode</span>
+        </button>
+        {{ if .UserEmail }}
+        <span class="text-sm opacity-70">{{ .UserEmail }}</span>
+        {{ end }}
+    </div>
+</div>
+{{ end }}
