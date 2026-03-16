@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: convoke
+      POSTGRES_PASSWORD: convoke
+      POSTGRES_DB: convoke
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  app:
+    build:
+      context: .
+      dockerfile: test/Dockerfile.cover
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://convoke:convoke@postgres:5432/convoke?sslmode=disable
+      LISTEN_ADDR: ":8080"
+      DEV_MODE: "true"
+      ADMIN_GROUP: admin
+      CSRF_SECRET: test-secret
+      GOCOVERDIR: /coverage
+    volumes:
+      - ./coverage:/coverage
+    depends_on:
+      postgres:
+        condition: service_started
+
+  # TODO: Add Keycloak and oauth2-proxy for full e2e auth testing

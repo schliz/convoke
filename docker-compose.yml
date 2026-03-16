@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: convoke
+      POSTGRES_PASSWORD: convoke
+      POSTGRES_DB: convoke
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://convoke:convoke@postgres:5432/convoke?sslmode=disable
+      LISTEN_ADDR: ":8080"
+      DEV_MODE: "true"
+      ADMIN_GROUP: admin
+      CSRF_SECRET: dev-secret-change-in-production
+    depends_on:
+      postgres:
+        condition: service_started
+
+volumes:
+  pgdata:
