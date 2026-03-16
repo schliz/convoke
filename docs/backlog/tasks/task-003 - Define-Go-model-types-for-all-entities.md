@@ -4,10 +4,12 @@ title: Define Go model types for all entities
 status: To Do
 assignee: []
 created_date: '2026-03-16 14:31'
+updated_date: '2026-03-16 14:36'
 labels:
   - backend
 milestone: m-0
-dependencies: []
+dependencies:
+  - TASK-002
 priority: medium
 ordinal: 3000
 ---
