@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@source "../../templates/**/*.html";
+@plugin "daisyui";
+@plugin "daisyui/theme" {
+  name: "convoke-light";
+  default: true;
+  color-scheme: light;
+
+  --color-primary: oklch(65.3% 0.1931 41.2);
+  --color-base-100: oklch(97.5% 0.0021 15.1);
+}
+@plugin "daisyui/theme" {
+  name: "convoke-dark";
+  prefersdark: true;
+  color-scheme: dark;
+
+  --color-primary: oklch(65.3% 0.1931 41.2);
+  --color-base-100: oklch(21.4% 0.0227 47.6);
+}

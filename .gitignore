@@ -1,0 +1,31 @@
+# Go
+/bin/
+*.exe
+
+# CSS build output
+/static/css/styles.css
+/static/css/styles.*.css
+
+# Node
+node_modules/
+
+# Environment
+.env
+
+# Coverage
+/coverage/
+coverage.out
+
+# E2E
+/e2e/.auth/
+/e2e/test-results/
+/e2e/playwright-report/
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
