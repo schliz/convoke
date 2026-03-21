@@ -4,7 +4,7 @@ title: Attendance store methods
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:34'
-updated_date: '2026-03-21 22:26'
+updated_date: '2026-03-21 22:42'
 labels:
   - backend
 milestone: m-4
@@ -38,12 +38,12 @@ These methods are performance-critical since they're called on every entry card 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CRUD methods for attendance records work correctly
-- [ ] #2 Can count attendees by status efficiently
-- [ ] #3 Can bulk-create pending attendance for meeting audiences
-- [ ] #4 Can list entries with user's attendance status for personal dashboard
-- [ ] #5 UNIQUE constraint is handled properly on create
-- [ ] #6 Follows existing DBTX pattern
+- [x] #1 CRUD methods for attendance records work correctly
+- [x] #2 Can count attendees by status efficiently
+- [x] #3 Can bulk-create pending attendance for meeting audiences
+- [x] #4 Can list entries with user's attendance status for personal dashboard
+- [x] #5 UNIQUE constraint is handled properly on create
+- [x] #6 Follows existing DBTX pattern
 <!-- AC:END -->
 
 ## Implementation Plan
