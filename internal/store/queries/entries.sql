@@ -39,6 +39,78 @@ RETURNING *;
 -- name: DeleteEntry :exec
 DELETE FROM entries WHERE id = $1;
 
+-- name: GetEntryWithCalendar :one
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.id = $1;
+
+-- name: GetEntryWithCalendarBySlug :one
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.slug = $1;
+
+-- name: GetEntryForUpdate :one
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.id = $1
+FOR UPDATE OF e;
+
+-- name: ListEntriesByCalendarWithCalendar :many
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.calendar_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at;
+
+-- name: ListEntriesByUnit :many
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE c.unit_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at;
+
+-- name: ListEntriesByUser :many
+SELECT e.*,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+JOIN attendances a ON a.entry_id = e.id
+WHERE a.user_id = $1
+  AND a.status IN ('accepted', 'pending')
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at;
+
 -- name: GetEntryShiftDetails :one
 SELECT * FROM entry_shift_details WHERE entry_id = $1;
 

@@ -154,6 +154,63 @@ func (q *Queries) GetEntryBySlug(ctx context.Context, slug string) (Entry, error
 	return i, err
 }
 
+const getEntryForUpdate = `-- name: GetEntryForUpdate :one
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.id = $1
+FOR UPDATE OF e
+`
+
+type GetEntryForUpdateRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) GetEntryForUpdate(ctx context.Context, id int64) (GetEntryForUpdateRow, error) {
+	row := q.db.QueryRow(ctx, getEntryForUpdate, id)
+	var i GetEntryForUpdateRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.CalendarID,
+		&i.Name,
+		&i.Type,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Location,
+		&i.Description,
+		&i.ResponseDeadline,
+		&i.RecurrenceRuleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CalendarName,
+		&i.CalendarSlug,
+		&i.CalendarColor,
+		&i.UnitID,
+	)
+	return i, err
+}
+
 const getEntryShiftDetails = `-- name: GetEntryShiftDetails :one
 SELECT entry_id, required_participants, max_participants FROM entry_shift_details WHERE entry_id = $1
 `
@@ -162,6 +219,118 @@ func (q *Queries) GetEntryShiftDetails(ctx context.Context, entryID int64) (Entr
 	row := q.db.QueryRow(ctx, getEntryShiftDetails, entryID)
 	var i EntryShiftDetail
 	err := row.Scan(&i.EntryID, &i.RequiredParticipants, &i.MaxParticipants)
+	return i, err
+}
+
+const getEntryWithCalendar = `-- name: GetEntryWithCalendar :one
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.id = $1
+`
+
+type GetEntryWithCalendarRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) GetEntryWithCalendar(ctx context.Context, id int64) (GetEntryWithCalendarRow, error) {
+	row := q.db.QueryRow(ctx, getEntryWithCalendar, id)
+	var i GetEntryWithCalendarRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.CalendarID,
+		&i.Name,
+		&i.Type,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Location,
+		&i.Description,
+		&i.ResponseDeadline,
+		&i.RecurrenceRuleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CalendarName,
+		&i.CalendarSlug,
+		&i.CalendarColor,
+		&i.UnitID,
+	)
+	return i, err
+}
+
+const getEntryWithCalendarBySlug = `-- name: GetEntryWithCalendarBySlug :one
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.slug = $1
+`
+
+type GetEntryWithCalendarBySlugRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) GetEntryWithCalendarBySlug(ctx context.Context, slug string) (GetEntryWithCalendarBySlugRow, error) {
+	row := q.db.QueryRow(ctx, getEntryWithCalendarBySlug, slug)
+	var i GetEntryWithCalendarBySlugRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.CalendarID,
+		&i.Name,
+		&i.Type,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.Location,
+		&i.Description,
+		&i.ResponseDeadline,
+		&i.RecurrenceRuleID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CalendarName,
+		&i.CalendarSlug,
+		&i.CalendarColor,
+		&i.UnitID,
+	)
 	return i, err
 }
 
@@ -251,6 +420,84 @@ func (q *Queries) ListEntriesByCalendarAndDateRange(ctx context.Context, arg Lis
 	return items, nil
 }
 
+const listEntriesByCalendarWithCalendar = `-- name: ListEntriesByCalendarWithCalendar :many
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE e.calendar_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at
+`
+
+type ListEntriesByCalendarWithCalendarParams struct {
+	CalendarID int64
+	StartsAt   pgtype.Timestamptz
+	StartsAt_2 pgtype.Timestamptz
+}
+
+type ListEntriesByCalendarWithCalendarRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) ListEntriesByCalendarWithCalendar(ctx context.Context, arg ListEntriesByCalendarWithCalendarParams) ([]ListEntriesByCalendarWithCalendarRow, error) {
+	rows, err := q.db.Query(ctx, listEntriesByCalendarWithCalendar, arg.CalendarID, arg.StartsAt, arg.StartsAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntriesByCalendarWithCalendarRow
+	for rows.Next() {
+		var i ListEntriesByCalendarWithCalendarRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CalendarID,
+			&i.Name,
+			&i.Type,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Location,
+			&i.Description,
+			&i.ResponseDeadline,
+			&i.RecurrenceRuleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CalendarName,
+			&i.CalendarSlug,
+			&i.CalendarColor,
+			&i.UnitID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listEntriesByDateRange = `-- name: ListEntriesByDateRange :many
 SELECT id, slug, calendar_id, name, type, starts_at, ends_at, location, description, response_deadline, recurrence_rule_id, created_at, updated_at FROM entries
 WHERE starts_at >= $1 AND starts_at < $2
@@ -323,6 +570,164 @@ func (q *Queries) ListEntriesByRecurrenceRule(ctx context.Context, recurrenceRul
 			&i.RecurrenceRuleID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntriesByUnit = `-- name: ListEntriesByUnit :many
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+WHERE c.unit_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at
+`
+
+type ListEntriesByUnitParams struct {
+	UnitID     int64
+	StartsAt   pgtype.Timestamptz
+	StartsAt_2 pgtype.Timestamptz
+}
+
+type ListEntriesByUnitRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) ListEntriesByUnit(ctx context.Context, arg ListEntriesByUnitParams) ([]ListEntriesByUnitRow, error) {
+	rows, err := q.db.Query(ctx, listEntriesByUnit, arg.UnitID, arg.StartsAt, arg.StartsAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntriesByUnitRow
+	for rows.Next() {
+		var i ListEntriesByUnitRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CalendarID,
+			&i.Name,
+			&i.Type,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Location,
+			&i.Description,
+			&i.ResponseDeadline,
+			&i.RecurrenceRuleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CalendarName,
+			&i.CalendarSlug,
+			&i.CalendarColor,
+			&i.UnitID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntriesByUser = `-- name: ListEntriesByUser :many
+SELECT e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at, e.location, e.description, e.response_deadline, e.recurrence_rule_id, e.created_at, e.updated_at,
+       c.name AS calendar_name,
+       c.slug AS calendar_slug,
+       c.color AS calendar_color,
+       c.unit_id AS unit_id
+FROM entries e
+JOIN calendars c ON e.calendar_id = c.id
+JOIN attendances a ON a.entry_id = e.id
+WHERE a.user_id = $1
+  AND a.status IN ('accepted', 'pending')
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at
+`
+
+type ListEntriesByUserParams struct {
+	UserID     int64
+	StartsAt   pgtype.Timestamptz
+	StartsAt_2 pgtype.Timestamptz
+}
+
+type ListEntriesByUserRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	RecurrenceRuleID pgtype.Int8
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	CalendarName     string
+	CalendarSlug     string
+	CalendarColor    pgtype.Text
+	UnitID           int64
+}
+
+func (q *Queries) ListEntriesByUser(ctx context.Context, arg ListEntriesByUserParams) ([]ListEntriesByUserRow, error) {
+	rows, err := q.db.Query(ctx, listEntriesByUser, arg.UserID, arg.StartsAt, arg.StartsAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntriesByUserRow
+	for rows.Next() {
+		var i ListEntriesByUserRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CalendarID,
+			&i.Name,
+			&i.Type,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Location,
+			&i.Description,
+			&i.ResponseDeadline,
+			&i.RecurrenceRuleID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CalendarName,
+			&i.CalendarSlug,
+			&i.CalendarColor,
+			&i.UnitID,
 		); err != nil {
 			return nil, err
 		}
