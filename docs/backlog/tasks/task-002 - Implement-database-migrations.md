@@ -1,10 +1,10 @@
 ---
 id: TASK-002
 title: Implement database migrations
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-21 16:03'
+updated_date: '2026-03-21 16:07'
 labels:
   - backend
 milestone: m-0
@@ -30,9 +30,15 @@ Follow the schema design document produced by the design task.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All tables from the approved schema design are created via Goose migrations
-- [ ] #2 Migrations run cleanly: goose up from scratch and goose down back to zero
-- [ ] #3 Foreign key relationships match the design with correct ON DELETE behavior
-- [ ] #4 Indexes and constraints match the design
-- [ ] #5 Migrations are embedded and auto-apply at startup (existing pattern in cmd/server/main.go)
+- [x] #1 All tables from the approved schema design are created via Goose migrations
+- [x] #2 Migrations run cleanly: goose up from scratch and goose down back to zero
+- [x] #3 Foreign key relationships match the design with correct ON DELETE behavior
+- [x] #4 Indexes and constraints match the design
+- [x] #5 Migrations are embedded and auto-apply at startup (existing pattern in cmd/server/main.go)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+9 goose migration files created covering all 24 tables from the approved schema spec. Migrations are grouped by domain area and ordered to respect FK dependencies. sqlc.yaml configured to read migrations as schema. Makefile updated with `sqlc` target. Auth middleware stubbed to compile without old store functions. All migrations committed individually.
+<!-- SECTION:FINAL_SUMMARY:END -->
