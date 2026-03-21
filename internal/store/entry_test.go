@@ -113,6 +113,51 @@ func TestGetEntryByID_Shift(t *testing.T) {
 	}
 }
 
+func TestGetEntryByID_ShiftWithoutDetailsRow(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	start := time.Date(2026, 3, 15, 8, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 15, 16, 0, 0, 0, time.UTC)
+
+	entryRow := mock.NewRows(entryWithCalendarColumns).
+		AddRow(makeEntryWithCalendarRow(1, "shift-1", "Morning Shift", "shift", start, end, "Fire Cal", "fire-cal", int64(10))...)
+
+	mock.ExpectQuery("SELECT e\\..+FROM entries e.+JOIN calendars c.+WHERE e\\.id = \\$1").
+		WithArgs(int64(1)).
+		WillReturnRows(entryRow)
+
+	// Shift details row does not exist — should be handled gracefully.
+	mock.ExpectQuery("SELECT .+ FROM entry_shift_details WHERE entry_id = \\$1").
+		WithArgs(int64(1)).
+		WillReturnError(pgx.ErrNoRows)
+
+	entry, err := GetEntryByID(context.Background(), mock, 1)
+	if err != nil {
+		t.Fatalf("expected no error for missing shift details, got: %v", err)
+	}
+	if entry.ID != 1 {
+		t.Errorf("expected ID 1, got %d", entry.ID)
+	}
+	if entry.Type != model.EntryTypeShift {
+		t.Errorf("expected type 'shift', got %q", entry.Type)
+	}
+	// Shift fields should be nil when details row is missing.
+	if entry.RequiredParticipants != nil {
+		t.Errorf("expected nil required_participants, got %v", entry.RequiredParticipants)
+	}
+	if entry.MaxParticipants != nil {
+		t.Errorf("expected nil max_participants, got %v", entry.MaxParticipants)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
 func TestGetEntryByID_Meeting(t *testing.T) {
 	mock, err := pgxmock.NewPool()
 	if err != nil {

@@ -9,13 +9,6 @@ import (
 	"github.com/schliz/convoke/internal/db"
 )
 
-// TxStarter is the subset of pgxpool.Pool needed to begin a transaction.
-// Both *pgxpool.Pool and pgxmock.PgxPoolIface satisfy this interface.
-type TxStarter interface {
-	db.DBTX
-	Begin(ctx context.Context) (pgx.Tx, error)
-}
-
 // GetCalendarByID returns a single calendar by its primary key.
 // Returns pgx.ErrNoRows if no calendar exists with the given ID.
 func GetCalendarByID(ctx context.Context, dbtx db.DBTX, id int64) (db.Calendar, error) {
@@ -63,102 +56,73 @@ func GetCustomViewerUnits(ctx context.Context, dbtx db.DBTX, calendarID int64) (
 }
 
 // CreateCalendarWithViewers inserts a new calendar and, if visibility is
-// 'custom', sets the custom viewer units. Runs in a transaction.
-func CreateCalendarWithViewers(
+// 'custom', sets the custom viewer units. Runs in a transaction via Store.WithTx.
+func (s *Store) CreateCalendarWithViewers(
 	ctx context.Context,
-	pool TxStarter,
 	params db.CreateCalendarParams,
 	customViewerUnitIDs []int64,
 ) (db.Calendar, error) {
 	var cal db.Calendar
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return cal, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx)
-			panic(p)
+	err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+		var txErr error
+		cal, txErr = q.CreateCalendar(ctx, params)
+		if txErr != nil {
+			return fmt.Errorf("create calendar: %w", txErr)
 		}
-	}()
 
-	q := db.New(tx)
-
-	cal, err = q.CreateCalendar(ctx, params)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return cal, fmt.Errorf("create calendar: %w", err)
-	}
-
-	if params.Visibility == "custom" {
-		for _, unitID := range customViewerUnitIDs {
-			if err := q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
-				CalendarID: cal.ID,
-				UnitID:     unitID,
-			}); err != nil {
-				_ = tx.Rollback(ctx)
-				return cal, fmt.Errorf("insert custom viewer: %w", err)
+		if params.Visibility == "custom" {
+			for _, unitID := range customViewerUnitIDs {
+				if txErr = q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
+					CalendarID: cal.ID,
+					UnitID:     unitID,
+				}); txErr != nil {
+					return fmt.Errorf("insert custom viewer: %w", txErr)
+				}
 			}
 		}
-	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return cal, fmt.Errorf("commit transaction: %w", err)
-	}
-	return cal, nil
+		return nil
+	})
+
+	return cal, err
 }
 
 // UpdateCalendarWithViewers updates calendar properties and replaces the custom
 // viewer units. Always clears existing custom viewers, then re-inserts if
-// visibility is 'custom'. Runs in a transaction.
-func UpdateCalendarWithViewers(
+// visibility is 'custom'. Runs in a transaction via Store.WithTx.
+func (s *Store) UpdateCalendarWithViewers(
 	ctx context.Context,
-	pool TxStarter,
 	params db.UpdateCalendarParams,
 	customViewerUnitIDs []int64,
 ) (db.Calendar, error) {
 	var cal db.Calendar
 
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return cal, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer func() {
-		if p := recover(); p != nil {
-			_ = tx.Rollback(ctx)
-			panic(p)
+	err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+		var txErr error
+		cal, txErr = q.UpdateCalendar(ctx, params)
+		if txErr != nil {
+			return fmt.Errorf("update calendar: %w", txErr)
 		}
-	}()
 
-	q := db.New(tx)
+		// Always clear and re-set custom viewers (idempotent).
+		if txErr = q.DeleteCalendarCustomViewers(ctx, cal.ID); txErr != nil {
+			return fmt.Errorf("delete custom viewers: %w", txErr)
+		}
 
-	cal, err = q.UpdateCalendar(ctx, params)
-	if err != nil {
-		_ = tx.Rollback(ctx)
-		return cal, fmt.Errorf("update calendar: %w", err)
-	}
-
-	// Always clear and re-set custom viewers (idempotent).
-	if err := q.DeleteCalendarCustomViewers(ctx, cal.ID); err != nil {
-		_ = tx.Rollback(ctx)
-		return cal, fmt.Errorf("delete custom viewers: %w", err)
-	}
-
-	if params.Visibility == "custom" {
-		for _, unitID := range customViewerUnitIDs {
-			if err := q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
-				CalendarID: cal.ID,
-				UnitID:     unitID,
-			}); err != nil {
-				_ = tx.Rollback(ctx)
-				return cal, fmt.Errorf("insert custom viewer: %w", err)
+		if params.Visibility == "custom" {
+			for _, unitID := range customViewerUnitIDs {
+				if txErr = q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
+					CalendarID: cal.ID,
+					UnitID:     unitID,
+				}); txErr != nil {
+					return fmt.Errorf("insert custom viewer: %w", txErr)
+				}
 			}
 		}
-	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return cal, fmt.Errorf("commit transaction: %w", err)
-	}
-	return cal, nil
+		return nil
+	})
+
+	return cal, err
 }

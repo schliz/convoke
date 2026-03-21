@@ -579,10 +579,9 @@ func TestCreateCalendarWithViewers_AssociationVisibility(t *testing.T) {
 
 	mock.ExpectCommit()
 
-	s := &Store{pool: nil, queries: nil}
-	s.pool = nil // WithTx uses pool, but we mock the whole pool interface
+	s := NewWithPool(mock)
 
-	cal, err := CreateCalendarWithViewers(context.Background(), mock, params, nil)
+	cal, err := s.CreateCalendarWithViewers(context.Background(), params, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -641,7 +640,9 @@ func TestCreateCalendarWithViewers_CustomVisibility(t *testing.T) {
 
 	mock.ExpectCommit()
 
-	cal, err := CreateCalendarWithViewers(context.Background(), mock, params, []int64{20, 30})
+	s := NewWithPool(mock)
+
+	cal, err := s.CreateCalendarWithViewers(context.Background(), params, []int64{20, 30})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -696,7 +697,9 @@ func TestCreateCalendarWithViewers_RollsBackOnInsertError(t *testing.T) {
 
 	mock.ExpectRollback()
 
-	_, err = CreateCalendarWithViewers(context.Background(), mock, params, []int64{20})
+	s := NewWithPool(mock)
+
+	_, err = s.CreateCalendarWithViewers(context.Background(), params, []int64{20})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -752,7 +755,9 @@ func TestUpdateCalendarWithViewers_ChangesToCustom(t *testing.T) {
 
 	mock.ExpectCommit()
 
-	cal, err := UpdateCalendarWithViewers(context.Background(), mock, params, []int64{20})
+	s := NewWithPool(mock)
+
+	cal, err := s.UpdateCalendarWithViewers(context.Background(), params, []int64{20})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -806,7 +811,9 @@ func TestUpdateCalendarWithViewers_ChangesToUnitClearsViewers(t *testing.T) {
 
 	mock.ExpectCommit()
 
-	cal, err := UpdateCalendarWithViewers(context.Background(), mock, params, nil)
+	s := NewWithPool(mock)
+
+	cal, err := s.UpdateCalendarWithViewers(context.Background(), params, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -850,7 +857,9 @@ func TestUpdateCalendarWithViewers_RollsBackOnError(t *testing.T) {
 
 	mock.ExpectRollback()
 
-	_, err = UpdateCalendarWithViewers(context.Background(), mock, params, []int64{20})
+	s := NewWithPool(mock)
+
+	_, err = s.UpdateCalendarWithViewers(context.Background(), params, []int64{20})
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

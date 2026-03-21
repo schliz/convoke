@@ -2,65 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/schliz/convoke/internal/db"
 	"github.com/schliz/convoke/internal/model"
 )
-
-// --- Conversion helpers ---
-
-func textToPtr(t pgtype.Text) *string {
-	if !t.Valid {
-		return nil
-	}
-	return &t.String
-}
-
-func ptrToText(s *string) pgtype.Text {
-	if s == nil {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: *s, Valid: true}
-}
-
-func tsToTime(ts pgtype.Timestamptz) time.Time {
-	return ts.Time
-}
-
-func tsToPtr(ts pgtype.Timestamptz) *time.Time {
-	if !ts.Valid {
-		return nil
-	}
-	return &ts.Time
-}
-
-func ptrToTs(t *time.Time) pgtype.Timestamptz {
-	if t == nil {
-		return pgtype.Timestamptz{}
-	}
-	return pgtype.Timestamptz{Time: *t, Valid: true}
-}
-
-func int8ToPtr(i pgtype.Int8) *int64 {
-	if !i.Valid {
-		return nil
-	}
-	return &i.Int64
-}
-
-func ptrToInt8(i *int64) pgtype.Int8 {
-	if i == nil {
-		return pgtype.Int8{}
-	}
-	return pgtype.Int8{Int64: *i, Valid: true}
-}
-
-func timeToTs(t time.Time) pgtype.Timestamptz {
-	return pgtype.Timestamptz{Time: t, Valid: true}
-}
 
 // --- Row conversion ---
 
@@ -289,8 +238,10 @@ func GetEntryForUpdate(ctx context.Context, dbtx db.DBTX, id int64) (*model.Entr
 }
 
 // CreateEntry inserts a new entry and its type-specific details.
-// For shifts, it also inserts entry_shift_details.
-// Returns the created entry as a model.Entry with calendar context.
+// For shifts, it also inserts entry_shift_details and re-fetches the full model.
+//
+// IMPORTANT: For shift-type entries, the caller must pass a transaction-scoped
+// DBTX (e.g., from Store.WithTx) to ensure atomicity of the multi-step operation.
 func CreateEntry(ctx context.Context, dbtx db.DBTX, params CreateEntryParams) (*model.Entry, error) {
 	q := db.New(dbtx)
 
@@ -418,9 +369,14 @@ func ListEntriesByUser(ctx context.Context, dbtx db.DBTX, userID int64, start, e
 // --- Internal helpers ---
 
 // populateShiftDetails fetches and populates shift-specific fields on the entry.
+// If no shift details row exists (pgx.ErrNoRows), the shift fields are left nil
+// and no error is returned.
 func populateShiftDetails(ctx context.Context, q *db.Queries, entry *model.Entry) error {
 	details, err := q.GetEntryShiftDetails(ctx, entry.ID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // shift entry without details row, leave fields nil
+		}
 		return err
 	}
 	entry.RequiredParticipants = &details.RequiredParticipants

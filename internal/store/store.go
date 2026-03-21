@@ -10,12 +10,28 @@ import (
 	"github.com/schliz/convoke/internal/db"
 )
 
+// Pool is the minimal interface on the connection pool required by Store.
+// Both *pgxpool.Pool and pgxmock.PgxPoolIface satisfy this interface.
+type Pool interface {
+	db.DBTX
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
 type Store struct {
-	pool    *pgxpool.Pool
+	pool    Pool
 	queries *db.Queries
 }
 
 func New(pool *pgxpool.Pool) *Store {
+	return &Store{
+		pool:    pool,
+		queries: db.New(pool),
+	}
+}
+
+// NewWithPool creates a Store from any Pool implementation.
+// This is useful for testing with pgxmock.
+func NewWithPool(pool Pool) *Store {
 	return &Store{
 		pool:    pool,
 		queries: db.New(pool),
@@ -27,8 +43,8 @@ func (s *Store) Queries() *db.Queries {
 	return s.queries
 }
 
-// Pool returns the underlying connection pool.
-func (s *Store) Pool() *pgxpool.Pool {
+// DB returns the underlying pool as a DBTX for non-transactional queries.
+func (s *Store) DB() db.DBTX {
 	return s.pool
 }
 

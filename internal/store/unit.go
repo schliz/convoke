@@ -6,8 +6,9 @@ import (
 	"github.com/schliz/convoke/internal/db"
 )
 
-// unitColumns is the column list for unit queries, matching the field order in db.Unit.
-const unitCols = `id, name, slug, description, logo_path, contact_email, admin_group, created_at, updated_at`
+// unitCols is the column list for unit queries, table-alias-qualified for safe
+// use in JOINs. Matches the field order in db.Unit.
+const unitCols = `u.id, u.name, u.slug, u.description, u.logo_path, u.contact_email, u.admin_group, u.created_at, u.updated_at`
 
 // ListUnits returns all units ordered by name.
 func ListUnits(ctx context.Context, dbtx db.DBTX) ([]db.Unit, error) {
