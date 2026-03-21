@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/schliz/convoke/internal/db"
 	"github.com/schliz/convoke/internal/middleware"
 	"github.com/schliz/convoke/internal/store"
 )
@@ -25,26 +26,41 @@ func UserFromContext(ctx context.Context) *RequestUser {
 	return u
 }
 
-// Middleware extracts user from X-Forwarded-Email/Groups headers.
-// In dev mode, injects a fake admin user when no headers are present.
+// Middleware extracts user identity from reverse-proxy headers, upserts
+// the user into the database via sqlc, and stores a RequestUser in the
+// request context.
+//
+// Header mapping:
+//
+//	X-Forwarded-User              -> idp_subject (OIDC sub claim)
+//	X-Forwarded-Email             -> email
+//	X-Forwarded-Preferred-Username -> username
+//	X-Forwarded-Groups            -> groups (comma-separated)
+//
+// display_name is derived from username, falling back to the email prefix.
+// is_assoc_admin is determined by checking if adminGroup is in the groups
+// list BEFORE calling UpsertUser.
+//
+// In dev mode, a fake admin user is injected when no identity headers are
+// present.
 func Middleware(s *store.Store, adminGroup string, devMode bool) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			email := r.Header.Get("X-Forwarded-Email")
+			idpSubject := r.Header.Get("X-Forwarded-User")
 
-			if email == "" && devMode {
-				// Dev bypass: inject fake admin user
+			if idpSubject == "" && devMode {
+				// Dev bypass: inject fake admin user with valid fields
 				ctx := context.WithValue(r.Context(), contextKey{}, &RequestUser{
 					ID:      0,
 					Email:   "dev@localhost",
 					IsAdmin: true,
-					Groups:  []string{"admin"},
+					Groups:  []string{adminGroup},
 				})
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 
-			if email == "" {
+			if idpSubject == "" {
 				if r.Header.Get("HX-Request") == "true" {
 					w.Header().Set("HX-Redirect", "/")
 					w.WriteHeader(http.StatusUnauthorized)
@@ -54,19 +70,62 @@ func Middleware(s *store.Store, adminGroup string, devMode bool) middleware.Midd
 				return
 			}
 
+			email := r.Header.Get("X-Forwarded-Email")
+			username := r.Header.Get("X-Forwarded-Preferred-Username")
 			groups := parseGroups(r.Header.Get("X-Forwarded-Groups"))
+
+			// Derive display_name from username, falling back to email prefix.
+			displayName := username
+			if displayName == "" {
+				if idx := strings.Index(email, "@"); idx > 0 {
+					displayName = email[:idx]
+				} else {
+					displayName = idpSubject
+				}
+			}
+
+			// If no username header, use display_name as username.
+			if username == "" {
+				username = displayName
+			}
+
+			// Determine admin status from groups before upserting.
 			isAdmin := slices.Contains(groups, adminGroup)
-			// TODO(TASK-003): Replace with sqlc-generated user upsert once
-			// the new schema models are generated. For now we log and
-			// proceed with a header-only RequestUser (ID 0).
-			// displayName will be used when the store upsert is restored.
-			_ = s // suppress unused warning — Store will be used in TASK-003
-			slog.Info("auth: user login (store upsert pending TASK-003)",
-				"email", email, "groups", groups)
+
+			// Upsert user and sync IdP groups.
+			user, err := s.Queries().UpsertUser(r.Context(), db.UpsertUserParams{
+				IdpSubject:   idpSubject,
+				Username:     username,
+				DisplayName:  displayName,
+				Email:        email,
+				IsAssocAdmin: isAdmin,
+			})
+			if err != nil {
+				slog.Error("auth: failed to upsert user", "error", err, "idp_subject", idpSubject)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+
+			// Sync IdP groups: delete all then re-insert.
+			if err := s.Queries().DeleteUserIDPGroups(r.Context(), user.ID); err != nil {
+				slog.Error("auth: failed to delete user idp groups", "error", err, "user_id", user.ID)
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			for _, g := range groups {
+				if err := s.Queries().InsertUserIDPGroup(r.Context(), db.InsertUserIDPGroupParams{
+					UserID:    user.ID,
+					GroupName: g,
+				}); err != nil {
+					slog.Error("auth: failed to insert user idp group", "error", err, "user_id", user.ID, "group", g)
+					http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+					return
+				}
+			}
 
 			ctx := context.WithValue(r.Context(), contextKey{}, &RequestUser{
-				ID:      0,
-				Email:   email,
+				ID:      user.ID,
+				Email:   user.Email,
 				IsAdmin: isAdmin,
 				Groups:  groups,
 			})

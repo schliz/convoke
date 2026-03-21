@@ -5,32 +5,36 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/schliz/convoke/internal/db"
 )
 
-// DBTX is the common interface for pool and transaction.
-type DBTX interface {
-	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-}
-
 type Store struct {
-	pool *pgxpool.Pool
+	pool    *pgxpool.Pool
+	queries *db.Queries
 }
 
 func New(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{
+		pool:    pool,
+		queries: db.New(pool),
+	}
 }
 
-// DB returns the pool for non-transactional queries.
-func (s *Store) DB() DBTX {
+// Queries returns the sqlc-generated query functions for non-transactional use.
+func (s *Store) Queries() *db.Queries {
+	return s.queries
+}
+
+// Pool returns the underlying connection pool.
+func (s *Store) Pool() *pgxpool.Pool {
 	return s.pool
 }
 
 // WithTx wraps a function in a transaction with automatic rollback on error/panic.
-func (s *Store) WithTx(ctx context.Context, fn func(pgx.Tx) error) error {
+// Inside the callback, use db.New(tx) to get a transaction-scoped *db.Queries.
+func (s *Store) WithTx(ctx context.Context, fn func(tx pgx.Tx, q *db.Queries) error) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
@@ -41,7 +45,7 @@ func (s *Store) WithTx(ctx context.Context, fn func(pgx.Tx) error) error {
 			panic(p)
 		}
 	}()
-	if err := fn(tx); err != nil {
+	if err := fn(tx, db.New(tx)); err != nil {
 		_ = tx.Rollback(ctx)
 		return err
 	}
