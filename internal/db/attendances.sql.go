@@ -37,6 +37,18 @@ func (q *Queries) ClaimSubstitutionRequest(ctx context.Context, arg ClaimSubstit
 	return i, err
 }
 
+const countAcceptedAttendees = `-- name: CountAcceptedAttendees :one
+SELECT COUNT(*) FROM attendances
+WHERE entry_id = $1 AND status = 'accepted'
+`
+
+func (q *Queries) CountAcceptedAttendees(ctx context.Context, entryID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countAcceptedAttendees, entryID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countAttendancesByEntryAndStatus = `-- name: CountAttendancesByEntryAndStatus :one
 SELECT
     COUNT(*) FILTER (WHERE status = 'accepted') AS accepted,
@@ -119,6 +131,20 @@ func (q *Queries) CreateSubstitutionRequest(ctx context.Context, attendanceID in
 	return i, err
 }
 
+const deleteAttendance = `-- name: DeleteAttendance :exec
+DELETE FROM attendances WHERE entry_id = $1 AND user_id = $2
+`
+
+type DeleteAttendanceParams struct {
+	EntryID int64
+	UserID  int64
+}
+
+func (q *Queries) DeleteAttendance(ctx context.Context, arg DeleteAttendanceParams) error {
+	_, err := q.db.Exec(ctx, deleteAttendance, arg.EntryID, arg.UserID)
+	return err
+}
+
 const getAttendanceByEntryAndUser = `-- name: GetAttendanceByEntryAndUser :one
 SELECT id, entry_id, user_id, status, confirmed, note, responded_at, created_at, updated_at FROM attendances WHERE entry_id = $1 AND user_id = $2
 `
@@ -183,6 +209,24 @@ func (q *Queries) GetSubstitutionRequestByAttendance(ctx context.Context, attend
 	return i, err
 }
 
+const isAttendee = `-- name: IsAttendee :one
+SELECT EXISTS(
+    SELECT 1 FROM attendances WHERE entry_id = $1 AND user_id = $2
+) AS is_attendee
+`
+
+type IsAttendeeParams struct {
+	EntryID int64
+	UserID  int64
+}
+
+func (q *Queries) IsAttendee(ctx context.Context, arg IsAttendeeParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isAttendee, arg.EntryID, arg.UserID)
+	var is_attendee bool
+	err := row.Scan(&is_attendee)
+	return is_attendee, err
+}
+
 const listAttendancesByEntry = `-- name: ListAttendancesByEntry :many
 SELECT id, entry_id, user_id, status, confirmed, note, responded_at, created_at, updated_at FROM attendances WHERE entry_id = $1 ORDER BY created_at
 `
@@ -240,6 +284,136 @@ func (q *Queries) ListAttendancesByUser(ctx context.Context, userID int64) ([]At
 			&i.RespondedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAttendeesByEntry = `-- name: ListAttendeesByEntry :many
+SELECT
+    a.id, a.entry_id, a.user_id, a.status, a.confirmed, a.note,
+    a.responded_at, a.created_at AS attendance_created_at,
+    u.display_name, u.email
+FROM attendances a
+JOIN users u ON a.user_id = u.id
+WHERE a.entry_id = $1
+ORDER BY
+    CASE a.status
+        WHEN 'accepted' THEN 1
+        WHEN 'needs_substitute' THEN 2
+        WHEN 'pending' THEN 3
+        WHEN 'declined' THEN 4
+        WHEN 'replaced' THEN 5
+    END,
+    a.created_at
+`
+
+type ListAttendeesByEntryRow struct {
+	ID                  int64
+	EntryID             int64
+	UserID              int64
+	Status              string
+	Confirmed           bool
+	Note                pgtype.Text
+	RespondedAt         pgtype.Timestamptz
+	AttendanceCreatedAt pgtype.Timestamptz
+	DisplayName         string
+	Email               string
+}
+
+func (q *Queries) ListAttendeesByEntry(ctx context.Context, entryID int64) ([]ListAttendeesByEntryRow, error) {
+	rows, err := q.db.Query(ctx, listAttendeesByEntry, entryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAttendeesByEntryRow
+	for rows.Next() {
+		var i ListAttendeesByEntryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntryID,
+			&i.UserID,
+			&i.Status,
+			&i.Confirmed,
+			&i.Note,
+			&i.RespondedAt,
+			&i.AttendanceCreatedAt,
+			&i.DisplayName,
+			&i.Email,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEntriesWithUserAttendance = `-- name: ListEntriesWithUserAttendance :many
+SELECT
+    e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at,
+    e.location, e.description, e.response_deadline,
+    a.status AS attendance_status, a.responded_at
+FROM entries e
+JOIN attendances a ON a.entry_id = e.id
+WHERE a.user_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at
+`
+
+type ListEntriesWithUserAttendanceParams struct {
+	UserID     int64
+	StartsAt   pgtype.Timestamptz
+	StartsAt_2 pgtype.Timestamptz
+}
+
+type ListEntriesWithUserAttendanceRow struct {
+	ID               int64
+	Slug             string
+	CalendarID       int64
+	Name             string
+	Type             string
+	StartsAt         pgtype.Timestamptz
+	EndsAt           pgtype.Timestamptz
+	Location         pgtype.Text
+	Description      pgtype.Text
+	ResponseDeadline pgtype.Timestamptz
+	AttendanceStatus string
+	RespondedAt      pgtype.Timestamptz
+}
+
+func (q *Queries) ListEntriesWithUserAttendance(ctx context.Context, arg ListEntriesWithUserAttendanceParams) ([]ListEntriesWithUserAttendanceRow, error) {
+	rows, err := q.db.Query(ctx, listEntriesWithUserAttendance, arg.UserID, arg.StartsAt, arg.StartsAt_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEntriesWithUserAttendanceRow
+	for rows.Next() {
+		var i ListEntriesWithUserAttendanceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CalendarID,
+			&i.Name,
+			&i.Type,
+			&i.StartsAt,
+			&i.EndsAt,
+			&i.Location,
+			&i.Description,
+			&i.ResponseDeadline,
+			&i.AttendanceStatus,
+			&i.RespondedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -349,6 +523,78 @@ type UpdateAttendanceStatusParams struct {
 
 func (q *Queries) UpdateAttendanceStatus(ctx context.Context, arg UpdateAttendanceStatusParams) (Attendance, error) {
 	row := q.db.QueryRow(ctx, updateAttendanceStatus, arg.ID, arg.Status)
+	var i Attendance
+	err := row.Scan(
+		&i.ID,
+		&i.EntryID,
+		&i.UserID,
+		&i.Status,
+		&i.Confirmed,
+		&i.Note,
+		&i.RespondedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateAttendanceStatusByEntryAndUser = `-- name: UpdateAttendanceStatusByEntryAndUser :one
+UPDATE attendances SET
+    status = $3,
+    responded_at = CASE WHEN $3 != 'pending' THEN now() ELSE responded_at END,
+    updated_at = now()
+WHERE entry_id = $1 AND user_id = $2
+RETURNING id, entry_id, user_id, status, confirmed, note, responded_at, created_at, updated_at
+`
+
+type UpdateAttendanceStatusByEntryAndUserParams struct {
+	EntryID int64
+	UserID  int64
+	Status  string
+}
+
+func (q *Queries) UpdateAttendanceStatusByEntryAndUser(ctx context.Context, arg UpdateAttendanceStatusByEntryAndUserParams) (Attendance, error) {
+	row := q.db.QueryRow(ctx, updateAttendanceStatusByEntryAndUser, arg.EntryID, arg.UserID, arg.Status)
+	var i Attendance
+	err := row.Scan(
+		&i.ID,
+		&i.EntryID,
+		&i.UserID,
+		&i.Status,
+		&i.Confirmed,
+		&i.Note,
+		&i.RespondedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const upsertAttendance = `-- name: UpsertAttendance :one
+INSERT INTO attendances (entry_id, user_id, status, note)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (entry_id, user_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    note = COALESCE(EXCLUDED.note, attendances.note),
+    responded_at = CASE WHEN EXCLUDED.status != 'pending' THEN now() ELSE attendances.responded_at END,
+    updated_at = now()
+RETURNING id, entry_id, user_id, status, confirmed, note, responded_at, created_at, updated_at
+`
+
+type UpsertAttendanceParams struct {
+	EntryID int64
+	UserID  int64
+	Status  string
+	Note    pgtype.Text
+}
+
+func (q *Queries) UpsertAttendance(ctx context.Context, arg UpsertAttendanceParams) (Attendance, error) {
+	row := q.db.QueryRow(ctx, upsertAttendance,
+		arg.EntryID,
+		arg.UserID,
+		arg.Status,
+		arg.Note,
+	)
 	var i Attendance
 	err := row.Scan(
 		&i.ID,
