@@ -4,7 +4,7 @@ title: Calendar store methods
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:32'
-updated_date: '2026-03-21 22:28'
+updated_date: '2026-03-21 22:42'
 labels:
   - backend
 milestone: m-2
@@ -34,10 +34,10 @@ All methods accept DBTX as a parameter (not a receiver method on Store).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CRUD methods for calendars exist and work correctly
-- [ ] #2 ListCalendarsByUnit returns calendars ordered by sort_order
-- [ ] #3 ListVisibleCalendars correctly evaluates all three visibility modes (association, unit, custom)
-- [ ] #4 Follows existing DBTX pattern in internal/store/
+- [x] #1 CRUD methods for calendars exist and work correctly
+- [x] #2 ListCalendarsByUnit returns calendars ordered by sort_order
+- [x] #3 ListVisibleCalendars correctly evaluates all three visibility modes (association, unit, custom)
+- [x] #4 Follows existing DBTX pattern in internal/store/
 <!-- AC:END -->
 
 ## Implementation Plan
