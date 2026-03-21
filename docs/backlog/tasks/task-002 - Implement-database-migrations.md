@@ -1,15 +1,17 @@
 ---
 id: TASK-002
 title: Implement database migrations
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-16 14:36'
+updated_date: '2026-03-21 16:03'
 labels:
   - backend
 milestone: m-0
 dependencies:
   - TASK-001
+documentation:
+  - docs/backlog/documents/doc-002
 priority: medium
 ordinal: 2000
 ---
