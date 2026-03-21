@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -55,22 +56,19 @@ func Middleware(s *store.Store, adminGroup string, devMode bool) middleware.Midd
 
 			groups := parseGroups(r.Header.Get("X-Forwarded-Groups"))
 			isAdmin := slices.Contains(groups, adminGroup)
-			displayName := r.Header.Get("X-Forwarded-Preferred-Username")
-			if displayName == "" {
-				displayName = email
-			}
-
-			user, err := store.GetOrCreateUser(r.Context(), s.DB(), email, displayName, groups, isAdmin)
-			if err != nil {
-				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-				return
-			}
+			// TODO(TASK-003): Replace with sqlc-generated user upsert once
+			// the new schema models are generated. For now we log and
+			// proceed with a header-only RequestUser (ID 0).
+			// displayName will be used when the store upsert is restored.
+			_ = s // suppress unused warning — Store will be used in TASK-003
+			slog.Info("auth: user login (store upsert pending TASK-003)",
+				"email", email, "groups", groups)
 
 			ctx := context.WithValue(r.Context(), contextKey{}, &RequestUser{
-				ID:      user.ID,
-				Email:   user.Email,
-				IsAdmin: user.IsAdmin,
-				Groups:  user.Groups,
+				ID:      0,
+				Email:   email,
+				IsAdmin: isAdmin,
+				Groups:  groups,
 			})
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
