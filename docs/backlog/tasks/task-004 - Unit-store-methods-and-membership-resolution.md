@@ -4,7 +4,7 @@ title: Unit store methods and membership resolution
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-21 22:24'
+updated_date: '2026-03-21 22:39'
 labels:
   - backend
 milestone: m-1
@@ -34,10 +34,10 @@ Follow the DBTX pattern: store methods are package-level functions accepting DBT
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Can list all units and filter by user group membership
-- [ ] #2 Can resolve unit membership from IdP groups via group bindings table
-- [ ] #3 Can check unit admin status (unit admin group or association admin)
-- [ ] #4 Follows existing DBTX pattern in internal/store/
+- [x] #1 Can list all units and filter by user group membership
+- [x] #2 Can resolve unit membership from IdP groups via group bindings table
+- [x] #3 Can check unit admin status (unit admin group or association admin)
+- [x] #4 Follows existing DBTX pattern in internal/store/
 <!-- AC:END -->
 
 ## Implementation Plan
