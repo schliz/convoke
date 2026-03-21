@@ -1,4 +1,4 @@
-.PHONY: css css-watch build dev run test e2e e2e-up e2e-down e2e-coverage clean htmx-update
+.PHONY: css css-watch build dev run test e2e e2e-up e2e-down e2e-coverage clean htmx-update sqlc
 
 css:
 	npx @tailwindcss/cli -i static/css/input.css -o static/css/styles.css --minify
@@ -39,6 +39,9 @@ e2e-coverage:
 
 clean:
 	rm -rf bin/ static/css/styles*.css coverage/ coverage.out
+
+sqlc:
+	sqlc generate
 
 htmx-update:
 	curl -sL https://unpkg.com/htmx.org@2.0.8/dist/htmx.min.js -o static/js/htmx.min.js
