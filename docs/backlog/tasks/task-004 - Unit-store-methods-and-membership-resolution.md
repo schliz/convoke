@@ -4,7 +4,7 @@ title: Unit store methods and membership resolution
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-21 22:23'
+updated_date: '2026-03-21 22:24'
 labels:
   - backend
 milestone: m-1
@@ -167,4 +167,317 @@ func ListUnitsByUserGroups(ctx context.Context, dbtx DBTX, groups []string) ([]d
 func IsUnitMember(ctx context.Context, dbtx DBTX, unitID int64, userGroups []string) (bool, error)
 func IsUnitAdmin(ctx context.Context, dbtx DBTX, unitID int64, userGroups []string, isAssocAdmin bool) (bool, error)
 ```
+
+## 5. SQL Queries
+
+### 5.1 ListUnits
+
+```sql
+SELECT id, name, slug, description, logo_path, contact_email, admin_group, created_at, updated_at
+FROM units
+ORDER BY name
+```
+
+If a sqlc query `ListUnits` already exists from TASK-003, use the generated function. Otherwise, hand-write this as a direct `db.Query` call.
+
+### 5.2 GetUnitByID
+
+```sql
+SELECT id, name, slug, description, logo_path, contact_email, admin_group, created_at, updated_at
+FROM units
+WHERE id = $1
+```
+
+Single-row query. Use `db.QueryRow(...).Scan(...)` or the sqlc-generated function.
+
+### 5.3 GetUnitBySlug
+
+```sql
+SELECT id, name, slug, description, logo_path, contact_email, admin_group, created_at, updated_at
+FROM units
+WHERE slug = $1
+```
+
+Single-row query. Same pattern as GetUnitByID.
+
+### 5.4 ListUnitsByUserGroups
+
+This is the core membership resolution query. It joins `units` with `unit_group_bindings` and filters by the user's groups passed as a `text[]` parameter.
+
+```sql
+SELECT DISTINCT u.id, u.name, u.slug, u.description, u.logo_path, u.contact_email, u.admin_group, u.created_at, u.updated_at
+FROM units u
+JOIN unit_group_bindings ugb ON u.id = ugb.unit_id
+WHERE ugb.group_name = ANY($1::text[])
+ORDER BY u.name
+```
+
+**Key detail:** pgx natively supports passing `[]string` as a PostgreSQL `text[]` parameter. The `ANY($1::text[])` operator checks if `group_name` is contained in the provided array. The `DISTINCT` is necessary because a user might be in multiple groups that bind to the same unit.
+
+**Empty groups handling:** If `$1` is an empty array `'{}'`, `ANY` will match nothing, returning zero rows. This is correct behavior. The Go code should still short-circuit and return `nil, nil` before executing the query when `groups` is nil or empty, to avoid the round-trip.
+
+### 5.5 IsUnitMember
+
+```sql
+SELECT EXISTS(
+    SELECT 1
+    FROM unit_group_bindings
+    WHERE unit_id = $1
+      AND group_name = ANY($2::text[])
+) AS is_member
+```
+
+Returns a single boolean. Uses `QueryRow(...).Scan(&result)`.
+
+### 5.6 IsUnitAdmin
+
+This method has two paths:
+
+1. If `isAssocAdmin` is true, return `true` immediately (no database query needed).
+2. Otherwise, check if any of `userGroups` matches the unit's `admin_group`.
+
+```sql
+SELECT EXISTS(
+    SELECT 1
+    FROM units
+    WHERE id = $1
+      AND admin_group IS NOT NULL
+      AND admin_group = ANY($2::text[])
+) AS is_admin
+```
+
+**Key detail:** If the unit has no `admin_group` (NULL), this returns false. This is correct per the requirements.
+
+**Go implementation:** The `isAssocAdmin` check is a pure Go short-circuit, not a SQL parameter.
+
+```go
+func IsUnitAdmin(ctx context.Context, dbtx DBTX, unitID int64, userGroups []string, isAssocAdmin bool) (bool, error) {
+    if isAssocAdmin {
+        return true, nil
+    }
+    if len(userGroups) == 0 {
+        return false, nil
+    }
+    var isAdmin bool
+    err := dbtx.QueryRow(ctx, `
+        SELECT EXISTS(
+            SELECT 1 FROM units
+            WHERE id = $1
+              AND admin_group IS NOT NULL
+              AND admin_group = ANY($2::text[])
+        )
+    `, unitID, userGroups).Scan(&isAdmin)
+    return isAdmin, err
+}
+```
+
+## 6. Implementation Details
+
+### 6.1 Row Scanning Strategy
+
+Two approaches depending on TASK-003 state:
+
+**If sqlc-generated queries exist for CRUD operations:** Use `db.New(dbtx).ListUnits(ctx)`, `db.New(dbtx).GetUnitByID(ctx, id)`, etc. These return `[]db.Unit` and `db.Unit` with scanning already handled.
+
+**If writing hand-crafted SQL (for membership methods or if sqlc queries are not yet available):** Use manual `Scan` for hand-written queries (membership methods), matching the pattern in `user.go`.
+
+### 6.2 Scanning a Unit Row (Helper)
+
+To avoid repeating the scan call list, define a private helper:
+
+```go
+func scanUnit(row pgx.Row) (*db.Unit, error) {
+    var u db.Unit
+    err := row.Scan(
+        &u.ID, &u.Name, &u.Slug, &u.Description,
+        &u.LogoPath, &u.ContactEmail, &u.AdminGroup,
+        &u.CreatedAt, &u.UpdatedAt,
+    )
+    if err != nil {
+        return nil, err
+    }
+    return &u, nil
+}
+```
+
+And a multi-row variant:
+
+```go
+const unitColumns = `id, name, slug, description, logo_path, contact_email, admin_group, created_at, updated_at`
+
+func scanUnits(rows pgx.Rows) ([]db.Unit, error) {
+    defer rows.Close()
+    var units []db.Unit
+    for rows.Next() {
+        var u db.Unit
+        if err := rows.Scan(
+            &u.ID, &u.Name, &u.Slug, &u.Description,
+            &u.LogoPath, &u.ContactEmail, &u.AdminGroup,
+            &u.CreatedAt, &u.UpdatedAt,
+        ); err != nil {
+            return nil, err
+        }
+        units = append(units, u)
+    }
+    return units, rows.Err()
+}
+```
+
+### 6.3 pgx.Row vs pgx.Rows
+
+- `store.DBTX.QueryRow` returns `pgx.Row` (single row, error deferred to Scan).
+- `store.DBTX.Query` returns `pgx.Rows` (iterator, must be closed).
+
+### 6.4 Adaptation to sqlc-generated types
+
+If the actual `db.Unit` struct uses `pgtype.Text` for nullable columns rather than `*string`, the Scan calls use `&u.Description` etc. and pgx handles the pgtype scanning natively. No conversion needed.
+
+---
+
+## 7. Edge Cases
+
+### 7.1 Empty Groups Slice
+
+All membership methods must handle `groups == nil` or `groups == []string{}`:
+- `ListUnitsByUserGroups`: Return empty slice (`nil, nil`) immediately.
+- `IsUnitMember`: Return `false, nil` immediately.
+- `IsUnitAdmin`: Only the `isAssocAdmin` bypass applies; if false, return `false, nil`.
+
+### 7.2 Unit Not Found
+
+- `GetUnitByID` and `GetUnitBySlug`: Return `nil, pgx.ErrNoRows` when no matching row exists.
+- `IsUnitMember` and `IsUnitAdmin` with a non-existent `unitID`: The `EXISTS` subquery returns `false`.
+
+### 7.3 Unit With No Group Bindings
+
+- `IsUnitMember`: Returns `false` because no rows exist in `unit_group_bindings` for that unit.
+- `ListUnitsByUserGroups`: The unit is excluded because the JOIN produces no rows.
+
+### 7.4 Unit With No Admin Group
+
+- `IsUnitAdmin` with `admin_group IS NULL`: Returns `false` due to the `admin_group IS NOT NULL` condition. Only association admins can manage such a unit.
+
+### 7.5 User in Multiple Groups Matching Same Unit
+
+- `ListUnitsByUserGroups`: The `DISTINCT` keyword prevents duplicate unit rows.
+- `IsUnitMember`: `EXISTS` returns `true` on the first match.
+
+### 7.6 Case Sensitivity of Group Names
+
+Group names are compared case-sensitively (standard PostgreSQL text comparison). This is intentional -- IdP group names are case-sensitive identifiers.
+
+## 8. Testing Strategy
+
+### 8.1 Approach: pgxmock
+
+Use `pgxmock` to mock the `DBTX` interface. pgxmock implements the pgx pool/connection interface.
+
+### 8.2 Test File: `internal/store/unit_test.go`
+
+### 8.3 Test Cases
+
+#### ListUnits
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns all units ordered by name | Mock returns 3 unit rows | Slice of 3 `db.Unit`, correct field mapping |
+| Returns empty slice when no units | Mock returns 0 rows | Empty (nil) slice, no error |
+| Propagates database error | Mock returns error | nil slice, error returned |
+
+#### GetUnitByID
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns unit when found | Mock returns 1 row | `*db.Unit` with correct fields |
+| Returns ErrNoRows when not found | Mock returns pgx.ErrNoRows | nil, pgx.ErrNoRows |
+| Propagates database error | Mock returns error | nil, error |
+
+#### GetUnitBySlug
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns unit when found | Mock returns 1 row for slug "bar-committee" | `*db.Unit` with correct slug |
+| Returns ErrNoRows when not found | Mock returns pgx.ErrNoRows | nil, pgx.ErrNoRows |
+
+#### ListUnitsByUserGroups
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns matching units | Mock expects `ANY($1)` with groups, returns 2 rows | Slice of 2 units |
+| Returns empty for non-matching groups | Mock returns 0 rows | Empty slice |
+| Short-circuits for nil groups | No mock expectations | nil, nil (no DB call) |
+| Short-circuits for empty groups | No mock expectations | nil, nil (no DB call) |
+
+#### IsUnitMember
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns true when group matches | Mock returns `true` from EXISTS | true, nil |
+| Returns false when no match | Mock returns `false` from EXISTS | false, nil |
+| Short-circuits for nil groups | No mock expectations | false, nil |
+| Short-circuits for empty groups | No mock expectations | false, nil |
+
+#### IsUnitAdmin
+
+| Test | Setup | Expected |
+|------|-------|----------|
+| Returns true when isAssocAdmin | No mock expectations | true, nil (short-circuit) |
+| Returns true when group matches admin_group | Mock returns `true` from EXISTS | true, nil |
+| Returns false when no match | Mock returns `false` from EXISTS | false, nil |
+| Returns false when admin_group is NULL | Mock returns `false` (IS NOT NULL filters it) | false, nil |
+| Short-circuits for empty groups, not assoc admin | No mock expectations | false, nil |
+
+---
+
+## 9. Dependency on TASK-003
+
+TASK-004 depends on TASK-003 producing:
+
+1. **`internal/db/models.go`** with the `db.Unit` struct (used as return type).
+2. **Optionally, sqlc-generated query functions** in `internal/db/` for `ListUnits`, `GetUnitByID`, `GetUnitBySlug`.
+3. **The `internal/db/db.go`** file with the sqlc `DBTX` interface and `New()` constructor.
+
+The `store.DBTX` interface and `db.DBTX` interface (sqlc-generated) are structurally identical. No adapter is needed.
+
+---
+
+## 10. Implementation Order
+
+1. **Create `internal/store/unit.go`** with all 6 methods.
+2. **Create `internal/store/unit_test.go`** with all test cases.
+3. **Run `go test ./internal/store/...`** to verify.
+4. **Run `go build ./...`** to verify no compilation errors.
+
+Within `unit.go`, implement in this order:
+1. `scanUnit` and `scanUnits` helpers (or column constant)
+2. `ListUnits` (simplest, validates pattern)
+3. `GetUnitByID`
+4. `GetUnitBySlug`
+5. `ListUnitsByUserGroups` (first membership query)
+6. `IsUnitMember`
+7. `IsUnitAdmin`
+
+---
+
+## 11. Open Questions
+
+### Q1: Should `ListUnitsByUserGroups` also return units where the user is an admin (via `admin_group`) but not a member?
+
+**Tentative answer: No.** The task description says "list units whose group bindings overlap with the user's IdP groups." The `admin_group` is separate from `unit_group_bindings`. If a unit admin should also see the unit in navigation, they should be added to a member group binding as well. The fix, if needed, is simple: add `OR u.admin_group = ANY($1::text[])` to the WHERE clause.
+
+### Q2: Type of return value -- pointer vs value for single-entity methods?
+
+**Tentative answer:** `*db.Unit` (pointer) for `GetUnitByID` and `GetUnitBySlug`, matching the existing `GetOrCreateUser` pattern. `[]db.Unit` (value slice) for list methods.
+
+### Q3: Should `ListUnitsByUserGroups` also return the matched group names?
+
+**Tentative answer: No.** The task description asks for a list of units, not a list of (unit, matched_group) pairs.
+
+### Q4: Should the store methods handle `pgx.ErrNoRows` by wrapping it in a domain error?
+
+**Tentative answer: No.** The existing `GetOrCreateUser` does not wrap errors. The handler layer should check `errors.Is(err, pgx.ErrNoRows)` and return `&NotFoundError{...}`.
+
+### Q5: pgxmock version compatibility
+
+The project uses `pgx/v5`. Ensure the test dependency is `pgxmock/v4` or `/v5` as appropriate. Verify with `go get`.
 <!-- SECTION:PLAN:END -->
