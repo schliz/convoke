@@ -4,7 +4,7 @@ title: Entry store methods
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:33'
-updated_date: '2026-03-21 22:25'
+updated_date: '2026-03-21 22:45'
 labels:
   - backend
 milestone: m-3
@@ -36,11 +36,11 @@ The date range queries are critical for performance since they power all calenda
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 CRUD methods for entries work correctly for both shift and meeting types
-- [ ] #2 Date range queries return entries ordered by start_at
-- [ ] #3 GetEntryForUpdate uses SELECT FOR UPDATE for safe concurrent access
-- [ ] #4 ListEntriesByUser returns entries based on attendance records
-- [ ] #5 Follows existing DBTX pattern
+- [x] #1 CRUD methods for entries work correctly for both shift and meeting types
+- [x] #2 Date range queries return entries ordered by start_at
+- [x] #3 GetEntryForUpdate uses SELECT FOR UPDATE for safe concurrent access
+- [x] #4 ListEntriesByUser returns entries based on attendance records
+- [x] #5 Follows existing DBTX pattern
 <!-- AC:END -->
 
 ## Implementation Plan
