@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/jackc/pgx/v5 v5.8.0
+	github.com/pashagolub/pgxmock/v5 v5.0.1
 	github.com/pressly/goose/v3 v3.27.0
 )
 
