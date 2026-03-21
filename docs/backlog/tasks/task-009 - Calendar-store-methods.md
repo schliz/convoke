@@ -4,7 +4,7 @@ title: Calendar store methods
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:32'
-updated_date: '2026-03-21 22:23'
+updated_date: '2026-03-21 22:26'
 labels:
   - backend
 milestone: m-2
@@ -247,4 +247,261 @@ that wraps sqlc queries and adds:
 
 - `internal/store/store.go` -- no changes needed, existing `Queries()` and `WithTx()` suffice.
 - `internal/db/db.go` -- generated, never hand-edited.
+
+## 4. New sqlc Queries to Add
+
+### `GetCalendarWithUnit` -- Calendar joined with unit info
+
+```sql
+-- name: GetCalendarWithUnit :one
+SELECT c.id, c.slug, c.unit_id, c.name, c.creation_policy, c.visibility,
+    c.participation, c.participant_visibility, c.color, c.sort_order,
+    c.created_at, c.updated_at,
+    u.name AS unit_name, u.slug AS unit_slug
+FROM calendars c
+JOIN units u ON c.unit_id = u.id
+WHERE c.id = $1;
+```
+
+This satisfies the "get a single calendar with its unit info" requirement.
+sqlc will generate a `GetCalendarWithUnitRow` struct containing all
+calendar fields plus `UnitName` and `UnitSlug`.
+
+### `ListAllCalendars` -- For admin users who bypass visibility
+
+```sql
+-- name: ListAllCalendars :many
+SELECT c.id, c.slug, c.unit_id, c.name, c.creation_policy, c.visibility,
+    c.participation, c.participant_visibility, c.color, c.sort_order,
+    c.created_at, c.updated_at,
+    u.name AS unit_name, u.slug AS unit_slug
+FROM calendars c
+JOIN units u ON c.unit_id = u.id
+ORDER BY u.name, c.sort_order, c.name;
+```
+
+### `GetCustomViewerUnits` -- List units that are custom viewers of a calendar
+
+```sql
+-- name: GetCustomViewerUnits :many
+SELECT u.id, u.name, u.slug
+FROM calendar_custom_viewers ccv
+JOIN units u ON ccv.unit_id = u.id
+WHERE ccv.calendar_id = $1
+ORDER BY u.name;
+```
+
+## 5. Method Signatures for `internal/store/calendar.go`
+
+```go
+package store
+
+import (
+    "context"
+    "fmt"
+
+    "github.com/schliz/convoke/internal/db"
+)
+
+// CreateCalendar inserts a new calendar and, if visibility is 'custom',
+// sets the custom viewer units. Runs in a transaction.
+func CreateCalendar(
+    ctx context.Context,
+    s *Store,
+    params db.CreateCalendarParams,
+    customViewerUnitIDs []int64,
+) (db.Calendar, error)
+
+// UpdateCalendar updates calendar properties and, if visibility is
+// 'custom', replaces the custom viewer units. Runs in a transaction.
+func UpdateCalendar(
+    ctx context.Context,
+    s *Store,
+    params db.UpdateCalendarParams,
+    customViewerUnitIDs []int64,
+) (db.Calendar, error)
+
+// DeleteCalendar deletes a calendar by ID. Entries, custom viewers,
+// event_calendars, and other dependent rows cascade via FK.
+func DeleteCalendar(
+    ctx context.Context,
+    q *db.Queries,
+    id int64,
+) error
+
+// GetCalendarByID returns a calendar with its owning unit's name and slug.
+func GetCalendarByID(
+    ctx context.Context,
+    q *db.Queries,
+    id int64,
+) (db.GetCalendarWithUnitRow, error)
+
+// GetCalendarBySlug returns a calendar by its URL slug.
+func GetCalendarBySlug(
+    ctx context.Context,
+    q *db.Queries,
+    slug string,
+) (db.Calendar, error)
+
+// ListCalendarsByUnit returns all calendars for a unit, ordered by
+// sort_order then name.
+func ListCalendarsByUnit(
+    ctx context.Context,
+    q *db.Queries,
+    unitID int64,
+) ([]db.Calendar, error)
+
+// ListVisibleCalendars returns calendars visible to a user. If isAdmin
+// is true, returns all calendars (admin bypass). Otherwise evaluates
+// visibility rules against the user's group memberships via the
+// normalized junction tables.
+func ListVisibleCalendars(
+    ctx context.Context,
+    q *db.Queries,
+    userID int64,
+    isAdmin bool,
+) ([]db.Calendar, error)
+```
+
+### Design Decisions in the Signatures
+
+1. **`CreateCalendar` and `UpdateCalendar` take `*Store`** (not
+   `*db.Queries`) because they need `WithTx()` to atomically manage the
+   calendar row and its custom viewers.
+
+2. **Read-only methods take `*db.Queries`** because they are single
+   queries and can work with either pool or transaction-scoped Queries.
+
+3. **`DeleteCalendar` takes `*db.Queries`** -- it's a single DELETE and
+   cascading is handled by the database.
+
+4. **`ListVisibleCalendars` takes `userID int64` and `isAdmin bool`**
+   rather than `userGroups []string`. The visibility query resolves groups
+   entirely in SQL via the `user_idp_groups` junction table. Passing
+   group strings would require an `ANY($1::text[])` array parameter which
+   is less clean. The `isAdmin` flag simply selects which query to run.
+
+5. **Custom viewer unit IDs are passed as `[]int64`** alongside the
+   calendar params. This avoids needing a separate "SetCustomViewers"
+   public method while keeping the transaction boundary clear.
+
+## 6. Implementation Details
+
+### `CreateCalendar` Implementation
+
+```go
+func CreateCalendar(
+    ctx context.Context,
+    s *Store,
+    params db.CreateCalendarParams,
+    customViewerUnitIDs []int64,
+) (db.Calendar, error) {
+    var cal db.Calendar
+    err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+        var err error
+        cal, err = q.CreateCalendar(ctx, params)
+        if err != nil {
+            return fmt.Errorf("create calendar: %w", err)
+        }
+        if params.Visibility == "custom" {
+            for _, unitID := range customViewerUnitIDs {
+                if err := q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
+                    CalendarID: cal.ID,
+                    UnitID:     unitID,
+                }); err != nil {
+                    return fmt.Errorf("insert custom viewer: %w", err)
+                }
+            }
+        }
+        return nil
+    })
+    return cal, err
+}
+```
+
+### `UpdateCalendar` Implementation
+
+```go
+func UpdateCalendar(
+    ctx context.Context,
+    s *Store,
+    params db.UpdateCalendarParams,
+    customViewerUnitIDs []int64,
+) (db.Calendar, error) {
+    var cal db.Calendar
+    err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+        var err error
+        cal, err = q.UpdateCalendar(ctx, params)
+        if err != nil {
+            return fmt.Errorf("update calendar: %w", err)
+        }
+        // Always clear and re-set custom viewers (idempotent).
+        if err := q.DeleteCalendarCustomViewers(ctx, cal.ID); err != nil {
+            return fmt.Errorf("delete custom viewers: %w", err)
+        }
+        if params.Visibility == "custom" {
+            for _, unitID := range customViewerUnitIDs {
+                if err := q.InsertCalendarCustomViewer(ctx, db.InsertCalendarCustomViewerParams{
+                    CalendarID: cal.ID,
+                    UnitID:     unitID,
+                }); err != nil {
+                    return fmt.Errorf("insert custom viewer: %w", err)
+                }
+            }
+        }
+        return nil
+    })
+    return cal, err
+}
+```
+
+### `ListVisibleCalendars` Implementation
+
+```go
+func ListVisibleCalendars(
+    ctx context.Context,
+    q *db.Queries,
+    userID int64,
+    isAdmin bool,
+) ([]db.Calendar, error) {
+    if isAdmin {
+        return q.ListAllCalendars(ctx)
+    }
+    return q.ListVisibleCalendarsForUser(ctx, userID)
+}
+```
+
+**Note on return types**: `ListAllCalendars` as defined above returns a
+joined row type (`ListAllCalendarsRow`), while `ListVisibleCalendarsForUser`
+returns `[]db.Calendar`. To unify the return type, either:
+- (a) Make `ListAllCalendars` return only calendar columns (no join), or
+- (b) Add unit info to the visibility query too, or
+- (c) Accept different return types for admin vs. non-admin paths.
+
+**Recommended approach**: Option (a) -- add a simple
+`ListAllCalendarsSimple` query that returns `SELECT * FROM calendars ORDER BY sort_order, name`
+for admin bypass, keeping the return type as `[]db.Calendar`. The joined
+query (`ListAllCalendars` with unit info) is available separately for
+admin UI pages that need it.
+
+### Simple pass-through methods
+
+`DeleteCalendar`, `GetCalendarBySlug`, `ListCalendarsByUnit` are thin
+wrappers that delegate directly to the sqlc method. They exist to provide
+a consistent API surface and a place to add logging, error wrapping, or
+validation in the future.
+
+```go
+func DeleteCalendar(ctx context.Context, q *db.Queries, id int64) error {
+    return q.DeleteCalendar(ctx, id)
+}
+
+func GetCalendarBySlug(ctx context.Context, q *db.Queries, slug string) (db.Calendar, error) {
+    return q.GetCalendarBySlug(ctx, slug)
+}
+
+func ListCalendarsByUnit(ctx context.Context, q *db.Queries, unitID int64) ([]db.Calendar, error) {
+    return q.ListCalendarsByUnit(ctx, unitID)
+}
+```
 <!-- SECTION:PLAN:END -->
