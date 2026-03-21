@@ -1,15 +1,18 @@
 ---
 id: TASK-001
 title: Design complete database schema
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-16 14:31'
+updated_date: '2026-03-21 16:03'
 labels:
   - design
 milestone: m-0
 dependencies: []
 documentation:
   - docs/design/requirements.md
+  - docs/superpowers/specs/2026-03-21-database-schema-design.md
+  - docs/backlog/documents/doc-001
 priority: medium
 ordinal: 1000
 ---
@@ -46,10 +49,16 @@ Output: A schema design document (can be markdown with SQL DDL blocks) documenti
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All entities from requirements sections 3-7 are represented in the schema design
-- [ ] #2 Relationships between entities are documented with foreign keys and ON DELETE behavior
-- [ ] #3 Index strategy is documented with justification for each index
-- [ ] #4 Check constraints and enum-like columns are specified
-- [ ] #5 Design decisions and trade-offs are explained (not just raw DDL)
-- [ ] #6 The existing users table (migration 00001) is accounted for — schema builds on it
+- [x] #1 All entities from requirements sections 3-7 are represented in the schema design
+- [x] #2 Relationships between entities are documented with foreign keys and ON DELETE behavior
+- [x] #3 Index strategy is documented with justification for each index
+- [x] #4 Check constraints and enum-like columns are specified
+- [x] #5 Design decisions and trade-offs are explained (not just raw DDL)
+- [x] #6 The existing users table (migration 00001) is accounted for — schema builds on it
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Schema design complete. 24-table PostgreSQL schema covering all entities from requirements sections 3-7. Key decisions documented in DOC-001 (ADR): BIGSERIAL PKs + opaque slugs, CHECK constraints over native enums, events as loose calendar groupings, sqlc for data access, hard delete with CASCADE. Spec reviewed and approved. Implementation plans created as DOC-002 (migrations) and DOC-003 (sqlc model types).
+<!-- SECTION:FINAL_SUMMARY:END -->
