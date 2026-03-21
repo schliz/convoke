@@ -4,7 +4,7 @@ title: Attendance store methods
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:34'
-updated_date: '2026-03-21 22:23'
+updated_date: '2026-03-21 22:26'
 labels:
   - backend
 milestone: m-4
@@ -218,4 +218,247 @@ import (
 // Returns the number of records actually inserted.
 func BulkCreatePendingAttendance(ctx context.Context, s *Store, entryID int64, userIDs []int64) (int64, error)
 ```
+
+## 4. SQL Queries
+
+### 4.1 UpsertAttendance (replaces CreateAttendance for conflict-safe creation)
+
+```sql
+-- name: UpsertAttendance :one
+INSERT INTO attendances (entry_id, user_id, status, note)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (entry_id, user_id) DO UPDATE SET
+    status = EXCLUDED.status,
+    note = COALESCE(EXCLUDED.note, attendances.note),
+    responded_at = CASE WHEN EXCLUDED.status != 'pending' THEN now() ELSE attendances.responded_at END,
+    updated_at = now()
+RETURNING *;
+```
+
+Rationale: When a duplicate is inserted, the caller likely intends to update the status (e.g., admin re-adding a user who previously declined). Using `DO UPDATE` makes this idempotent. The existing `CreateAttendance` query (plain INSERT) is kept for cases where a conflict should raise an error.
+
+### 4.2 UpdateAttendanceStatusByEntryAndUser
+
+```sql
+-- name: UpdateAttendanceStatusByEntryAndUser :one
+UPDATE attendances SET
+    status = $3,
+    responded_at = CASE WHEN $3 != 'pending' THEN now() ELSE responded_at END,
+    updated_at = now()
+WHERE entry_id = $1 AND user_id = $2
+RETURNING *;
+```
+
+Rationale: Handlers typically know (entry_id, user_id) from the route/context, not the attendance PK. This avoids a lookup-then-update round trip.
+
+### 4.3 DeleteAttendance
+
+```sql
+-- name: DeleteAttendance :exec
+DELETE FROM attendances WHERE entry_id = $1 AND user_id = $2;
+```
+
+### 4.4 ListAttendeesByEntry (with user info JOIN)
+
+```sql
+-- name: ListAttendeesByEntry :many
+SELECT
+    a.id, a.entry_id, a.user_id, a.status, a.confirmed, a.note,
+    a.responded_at, a.created_at AS attendance_created_at,
+    u.display_name, u.email
+FROM attendances a
+JOIN users u ON a.user_id = u.id
+WHERE a.entry_id = $1
+ORDER BY
+    CASE a.status
+        WHEN 'accepted' THEN 1
+        WHEN 'needs_substitute' THEN 2
+        WHEN 'pending' THEN 3
+        WHEN 'declined' THEN 4
+        WHEN 'replaced' THEN 5
+    END,
+    a.created_at;
+```
+
+Rationale: The JOIN to `users` avoids N+1 queries when rendering participant lists. Ordering by status groups accepted users first. sqlc will generate a `ListAttendeesByEntryRow` struct with fields from both tables.
+
+### 4.5 CountAcceptedAttendees
+
+```sql
+-- name: CountAcceptedAttendees :one
+SELECT COUNT(*) FROM attendances
+WHERE entry_id = $1 AND status = 'accepted';
+```
+
+Rationale: Hot-path query for staffing checks on entry cards. Uses the `idx_attendances_entry_id` index.
+
+### 4.6 IsAttendee
+
+```sql
+-- name: IsAttendee :one
+SELECT EXISTS(
+    SELECT 1 FROM attendances WHERE entry_id = $1 AND user_id = $2
+) AS is_attendee;
+```
+
+Rationale: Returns a boolean. Uses the unique index `idx_attendances_entry_user` for an index-only scan. Used to determine whether to show "Join" vs "Leave" buttons in the UI.
+
+### 4.7 BulkCreatePendingAttendance (raw SQL, not sqlc)
+
+The SQL used inside the hand-written store method:
+
+```sql
+INSERT INTO attendances (entry_id, user_id, status)
+VALUES ($1, $2, 'pending')
+ON CONFLICT (entry_id, user_id) DO NOTHING;
+```
+
+Executed via pgx `SendBatch`, queuing one statement per user_id. `ON CONFLICT DO NOTHING` ensures idempotency.
+
+Implementation approach:
+
+```go
+func BulkCreatePendingAttendance(ctx context.Context, s *Store, entryID int64, userIDs []int64) (int64, error) {
+    if len(userIDs) == 0 {
+        return 0, nil
+    }
+    batch := &pgx.Batch{}
+    for _, uid := range userIDs {
+        batch.Queue(
+            `INSERT INTO attendances (entry_id, user_id, status)
+             VALUES ($1, $2, 'pending')
+             ON CONFLICT (entry_id, user_id) DO NOTHING`,
+            entryID, uid,
+        )
+    }
+    br := s.Pool().SendBatch(ctx, batch)
+    defer br.Close()
+    var inserted int64
+    for range userIDs {
+        ct, err := br.Exec()
+        if err != nil {
+            return inserted, fmt.Errorf("bulk create attendance: %w", err)
+        }
+        inserted += ct.RowsAffected()
+    }
+    return inserted, nil
+}
+```
+
+Why `SendBatch` instead of `:copyfrom`? `:copyfrom` uses PostgreSQL's COPY protocol, which does **not** support `ON CONFLICT`. `SendBatch` sends all statements in a single network round-trip.
+
+### 4.8 ListEntriesWithUserAttendance (dashboard query)
+
+```sql
+-- name: ListEntriesWithUserAttendance :many
+SELECT
+    e.id, e.slug, e.calendar_id, e.name, e.type, e.starts_at, e.ends_at,
+    e.location, e.description, e.response_deadline,
+    a.status AS attendance_status, a.responded_at
+FROM entries e
+JOIN attendances a ON a.entry_id = e.id
+WHERE a.user_id = $1
+  AND e.starts_at >= $2
+  AND e.starts_at < $3
+ORDER BY e.starts_at;
+```
+
+Rationale: Powers the personal dashboard. Uses INNER JOIN because we only want entries where the user has an attendance record. sqlc will generate a `ListEntriesWithUserAttendanceRow` struct.
+
+---
+
+## 5. Performance Considerations
+
+### Hot-path queries (called on every entry card render)
+
+1. **`CountAcceptedAttendees`** -- Simple indexed count. The `idx_attendances_entry_id` index covers this. For shift cards, compared against `entry_shift_details.required_participants` to show staffing status.
+
+2. **`CountAttendancesByEntryAndStatus`** -- Already exists. Returns all status counts in a single query using `FILTER`. Slightly more expensive but avoids multiple round-trips when all counts are needed.
+
+3. **`ListAttendeesByEntry`** -- The JOIN to `users` is on `user_id` (PK), so it is an indexed nested loop join. For typical entry sizes (5-30 attendees), this is sub-millisecond.
+
+### Calendar view optimization
+
+When rendering a month view with many entries, the handler should batch-load attendance counts. This is a future optimization (not in scope for TASK-019) but the query design supports it -- a future `CountAcceptedAttendeesByEntries(ctx, entryIDs []int64)` can use `WHERE entry_id = ANY($1) GROUP BY entry_id`.
+
+### Index coverage
+
+All queries are covered by existing indexes:
+- `idx_attendances_entry_user` (unique) -- `GetAttendanceByEntryAndUser`, `DeleteAttendance`, `IsAttendee`, `UpdateAttendanceStatusByEntryAndUser`
+- `idx_attendances_entry_id` -- `ListAttendeesByEntry`, `CountAcceptedAttendees`, `CountAttendancesByEntryAndStatus`
+- `idx_attendances_user_id` -- `ListEntriesWithUserAttendance`
+- `idx_attendances_user_status` -- available for future status-filtered user queries
+- `idx_entries_starts_at` -- `ListEntriesWithUserAttendance`
+
+No new indexes are needed.
+
+## 6. Edge Cases
+
+### Duplicate attendance (UNIQUE constraint violation)
+
+- **`UpsertAttendance`**: Handles via `ON CONFLICT DO UPDATE` -- updates the existing record. Safe for re-RSVPs and admin overrides.
+- **`CreateAttendance`** (existing, plain INSERT): Will return a pgx error wrapping a Postgres `23505` unique violation.
+- **`BulkCreatePendingAttendance`**: Handles via `ON CONFLICT DO NOTHING` -- silently skips existing records. Returns the count of actually-inserted rows.
+
+### Bulk insert partial failures
+
+The `SendBatch` approach processes all statements in a single round-trip. If any single INSERT fails for a reason other than a unique conflict (e.g., FK violation), the error is returned and the `inserted` count reflects how many succeeded before the failure. The caller can wrap in `Store.WithTx()` for atomicity.
+
+### Concurrent status updates
+
+`UpdateAttendanceStatusByEntryAndUser` uses the composite key, so both updates will succeed serially (PostgreSQL row-level locking). The last writer wins. No optimistic locking is implemented -- acceptable given the application's scale.
+
+### Delete of non-existent attendance
+
+`DeleteAttendance` uses `:exec`, so deleting a non-existent record succeeds silently (0 rows affected).
+
+### Empty user list for bulk create
+
+`BulkCreatePendingAttendance` returns `(0, nil)` for an empty `userIDs` slice -- no batch is sent.
+
+### Foreign key violations
+
+If `entryID` or `userID` references a non-existent row, PostgreSQL returns a FK violation error (`23503`). The error propagates to the handler.
+
+## 7. Testing Strategy
+
+### No existing tests
+
+The project currently has zero test files. E2e tests (Playwright) are the primary testing strategy.
+
+### Recommended approach
+
+#### 1. E2E tests (primary, via Playwright)
+
+Test attendance operations through the UI once handlers are wired up:
+- Sign up for a shift and verify the participant list updates
+- RSVP to a meeting and verify the status indicator changes
+- Verify the personal dashboard shows entries with correct attendance status
+- Verify staffing counts update correctly
+
+#### 2. Integration tests (optional)
+
+If added, create `internal/store/attendance_test.go` using a test database with tests for: BulkCreatePendingAttendance idempotency, UpsertAttendance conflict updates, ListAttendeesByEntry ordering, IsAttendee boolean result, ListEntriesWithUserAttendance date range filtering.
+
+These require test infrastructure (dockerized PostgreSQL, seed data helpers) which does not exist yet -- out of scope for TASK-019.
+
+---
+
+## 8. Open Questions
+
+### Q1: Should `UpsertAttendance` replace or coexist with `CreateAttendance`?
+
+**Recommendation**: Add `UpsertAttendance` as a new query and keep existing `CreateAttendance` unchanged. Handlers that want strict duplicate detection use `CreateAttendance`; handlers that want idempotent upsert use `UpsertAttendance`.
+
+### Q2: Should `UpdateAttendanceStatusByEntryAndUser` also accept a note parameter?
+
+**Recommendation**: Keep status-only update for now. A separate `UpdateAttendanceNote` query can be added later.
+
+### Q3: What should `BulkCreatePendingAttendance` accept -- a `DBTX` or a `*Store`?
+
+**Recommendation**: Accept `db.DBTX` and use a loop of individual `Exec` calls. This works with both pool and transaction contexts. For expected audience sizes (5-50 users), per-statement overhead is negligible. Can be optimized to `SendBatch` later if needed.
+
+### Q4: Should `CountAcceptedAttendees` be a separate query or should callers use `CountAttendancesByEntryAndStatus`?
+
+**Recommendation**: Add `CountAcceptedAttendees` as specified. Having a dedicated query makes calling code more readable and explicit about intent. Both queries should coexist.
 <!-- SECTION:PLAN:END -->
