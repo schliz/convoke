@@ -125,6 +125,89 @@ func (q *Queries) GetCalendarBySlug(ctx context.Context, slug string) (Calendar,
 	return i, err
 }
 
+const getCalendarWithUnit = `-- name: GetCalendarWithUnit :one
+SELECT c.id, c.slug, c.unit_id, c.name, c.creation_policy, c.visibility,
+    c.participation, c.participant_visibility, c.color, c.sort_order,
+    c.created_at, c.updated_at,
+    u.name AS unit_name, u.slug AS unit_slug
+FROM calendars c
+JOIN units u ON c.unit_id = u.id
+WHERE c.id = $1
+`
+
+type GetCalendarWithUnitRow struct {
+	ID                    int64
+	Slug                  string
+	UnitID                int64
+	Name                  string
+	CreationPolicy        string
+	Visibility            string
+	Participation         string
+	ParticipantVisibility string
+	Color                 pgtype.Text
+	SortOrder             int32
+	CreatedAt             pgtype.Timestamptz
+	UpdatedAt             pgtype.Timestamptz
+	UnitName              string
+	UnitSlug              string
+}
+
+func (q *Queries) GetCalendarWithUnit(ctx context.Context, id int64) (GetCalendarWithUnitRow, error) {
+	row := q.db.QueryRow(ctx, getCalendarWithUnit, id)
+	var i GetCalendarWithUnitRow
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.UnitID,
+		&i.Name,
+		&i.CreationPolicy,
+		&i.Visibility,
+		&i.Participation,
+		&i.ParticipantVisibility,
+		&i.Color,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.UnitName,
+		&i.UnitSlug,
+	)
+	return i, err
+}
+
+const getCustomViewerUnits = `-- name: GetCustomViewerUnits :many
+SELECT u.id, u.name, u.slug
+FROM calendar_custom_viewers ccv
+JOIN units u ON ccv.unit_id = u.id
+WHERE ccv.calendar_id = $1
+ORDER BY u.name
+`
+
+type GetCustomViewerUnitsRow struct {
+	ID   int64
+	Name string
+	Slug string
+}
+
+func (q *Queries) GetCustomViewerUnits(ctx context.Context, calendarID int64) ([]GetCustomViewerUnitsRow, error) {
+	rows, err := q.db.Query(ctx, getCustomViewerUnits, calendarID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetCustomViewerUnitsRow
+	for rows.Next() {
+		var i GetCustomViewerUnitsRow
+		if err := rows.Scan(&i.ID, &i.Name, &i.Slug); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertCalendarCustomViewer = `-- name: InsertCalendarCustomViewer :exec
 INSERT INTO calendar_custom_viewers (calendar_id, unit_id) VALUES ($1, $2)
 `
@@ -137,6 +220,43 @@ type InsertCalendarCustomViewerParams struct {
 func (q *Queries) InsertCalendarCustomViewer(ctx context.Context, arg InsertCalendarCustomViewerParams) error {
 	_, err := q.db.Exec(ctx, insertCalendarCustomViewer, arg.CalendarID, arg.UnitID)
 	return err
+}
+
+const listAllCalendars = `-- name: ListAllCalendars :many
+SELECT id, slug, unit_id, name, creation_policy, visibility, participation, participant_visibility, color, sort_order, created_at, updated_at FROM calendars ORDER BY sort_order, name
+`
+
+func (q *Queries) ListAllCalendars(ctx context.Context) ([]Calendar, error) {
+	rows, err := q.db.Query(ctx, listAllCalendars)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Calendar
+	for rows.Next() {
+		var i Calendar
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.UnitID,
+			&i.Name,
+			&i.CreationPolicy,
+			&i.Visibility,
+			&i.Participation,
+			&i.ParticipantVisibility,
+			&i.Color,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listCalendarsByUnit = `-- name: ListCalendarsByUnit :many

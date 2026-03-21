@@ -46,6 +46,25 @@ WHERE c.visibility = 'association'
    ))
 ORDER BY c.sort_order, c.name;
 
+-- name: GetCalendarWithUnit :one
+SELECT c.id, c.slug, c.unit_id, c.name, c.creation_policy, c.visibility,
+    c.participation, c.participant_visibility, c.color, c.sort_order,
+    c.created_at, c.updated_at,
+    u.name AS unit_name, u.slug AS unit_slug
+FROM calendars c
+JOIN units u ON c.unit_id = u.id
+WHERE c.id = $1;
+
+-- name: ListAllCalendars :many
+SELECT * FROM calendars ORDER BY sort_order, name;
+
+-- name: GetCustomViewerUnits :many
+SELECT u.id, u.name, u.slug
+FROM calendar_custom_viewers ccv
+JOIN units u ON ccv.unit_id = u.id
+WHERE ccv.calendar_id = $1
+ORDER BY u.name;
+
 -- name: DeleteCalendarCustomViewers :exec
 DELETE FROM calendar_custom_viewers WHERE calendar_id = $1;
 
