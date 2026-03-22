@@ -105,14 +105,11 @@ func main() {
 		})
 	}
 
-	// Temporary landing redirect
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" {
-			http.NotFound(w, r)
-			return
-		}
-		http.Redirect(w, r, "/healthz", http.StatusTemporaryRedirect)
-	})
+	// Root route — redirects to unit or renders unit listing
+	mux.Handle("GET /", base(h.Wrap(h.Home)))
+
+	// Unit placeholder — will be replaced by the full unit dashboard
+	mux.Handle("GET /units/{slug}", base(h.Wrap(h.UnitDashboard)))
 
 	// 10. Server
 	srv := &http.Server{

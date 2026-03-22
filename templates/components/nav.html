@@ -1,18 +1,100 @@
 {{ define "nav" }}
 <div class="navbar bg-base-200 shadow-sm">
-    <div class="flex-1">
+    <div class="navbar-start">
+        {{/* Hamburger — visible only on mobile */}}
+        <label for="nav-drawer" class="btn btn-ghost btn-square lg:hidden" aria-label="open sidebar">
+            <span class="material-symbols-outlined">menu</span>
+        </label>
+        {{/* Brand */}}
         <a href="/" class="btn btn-ghost text-xl gap-2">
             <span class="material-symbols-outlined text-primary">group_work</span>
             Convoke
         </a>
     </div>
-    <div class="flex-none gap-2">
-        <button onclick="toggleTheme()" class="btn btn-ghost btn-circle">
-            <span class="material-symbols-outlined">dark_mode</span>
-        </button>
-        {{ if .UserEmail }}
-        <span class="text-sm opacity-70">{{ .UserEmail }}</span>
+    <div class="navbar-center hidden lg:flex">
+        {{/* Desktop unit dropdown */}}
+        {{ if .HasUnits }}
+        <div class="dropdown">
+            <div tabindex="0" role="button" class="btn btn-ghost gap-1">
+                <span class="material-symbols-outlined text-sm">apartment</span>
+                Units
+                <span class="material-symbols-outlined text-xs">expand_more</span>
+            </div>
+            <ul tabindex="0" class="dropdown-content menu bg-base-200 rounded-box z-10 w-56 p-2 shadow-lg">
+                {{ range .Units }}
+                <li><a href="/units/{{ .Slug }}">{{ .Name }}</a></li>
+                {{ end }}
+            </ul>
+        </div>
         {{ end }}
     </div>
+    <div class="navbar-end gap-1">
+        {{/* Admin link — desktop only, visible only to admins */}}
+        {{ if .IsAdmin }}
+        <a href="/admin/units/" class="btn btn-ghost btn-sm hidden lg:inline-flex gap-1">
+            <span class="material-symbols-outlined text-sm">admin_panel_settings</span>
+            Admin
+        </a>
+        {{ end }}
+        {{/* Theme toggle */}}
+        <button onclick="toggleTheme()" class="btn btn-ghost btn-square btn-sm" aria-label="toggle theme">
+            <span class="material-symbols-outlined">dark_mode</span>
+        </button>
+        {{/* User email — desktop only */}}
+        {{ if .UserEmail }}
+        <span class="text-sm opacity-70 hidden lg:inline">{{ .UserEmail }}</span>
+        {{ end }}
+    </div>
+</div>
+{{ end }}
+
+{{ define "nav-sidebar" }}
+<div class="flex flex-col h-full">
+    {{/* Brand in sidebar */}}
+    <div class="p-4 pb-2">
+        <a href="/" class="text-xl font-bold flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary">group_work</span>
+            Convoke
+        </a>
+    </div>
+    <div class="divider my-0 mx-4"></div>
+    {{/* Units section */}}
+    <ul class="menu w-full flex-1 p-4">
+        {{ if .HasUnits }}
+        <li class="menu-title">My Units</li>
+        {{ range .Units }}
+        <li>
+            <a href="/units/{{ .Slug }}">
+                <span class="material-symbols-outlined text-sm">group</span>
+                {{ .Name }}
+            </a>
+        </li>
+        {{ end }}
+        {{ else }}
+        <li class="menu-title">Units</li>
+        <li class="disabled">
+            <span class="opacity-50 text-sm">No units assigned</span>
+        </li>
+        {{ end }}
+        <div class="divider my-1"></div>
+        {{/* Admin link — visible only to admins */}}
+        {{ if .IsAdmin }}
+        <li>
+            <a href="/admin/units/">
+                <span class="material-symbols-outlined text-sm">admin_panel_settings</span>
+                Admin
+            </a>
+        </li>
+        {{ end }}
+    </ul>
+    {{/* User email at the bottom */}}
+    {{ if .UserEmail }}
+    <div class="p-4 pt-2 border-t border-base-300">
+        <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-sm opacity-50">person</span>
+            <span class="text-sm opacity-70 truncate">{{ .UserEmail }}</span>
+        </div>
+    </div>
+    {{ end }}
 </div>
 {{ end }}
