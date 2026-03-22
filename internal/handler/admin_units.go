@@ -11,9 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/schliz/convoke/internal/auth"
 	"github.com/schliz/convoke/internal/db"
-	"github.com/schliz/convoke/internal/middleware"
 	"github.com/schliz/convoke/internal/store"
 	"github.com/schliz/convoke/internal/viewmodel"
 )
@@ -44,20 +42,6 @@ func parseGroupBindings(raw []string) []string {
 	return result
 }
 
-// buildLayoutData constructs LayoutData from the request context.
-func buildLayoutData(r *http.Request, title string) viewmodel.LayoutData {
-	user := auth.UserFromContext(r.Context())
-	ld := viewmodel.LayoutData{
-		Title:     title,
-		CSRFToken: middleware.TokenFromContext(r.Context()),
-	}
-	if user != nil {
-		ld.UserEmail = user.Email
-		ld.IsAdmin = user.IsAdmin
-	}
-	return ld
-}
-
 // AdminListUnits renders the unit list page.
 func (h *Handler) AdminListUnits(w http.ResponseWriter, r *http.Request) error {
 	units, err := store.ListUnits(r.Context(), h.Store.DB())
@@ -84,7 +68,7 @@ func (h *Handler) AdminListUnits(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	data := viewmodel.AdminUnitsPage{
-		Layout: buildLayoutData(r, "Unit Management"),
+		Layout: h.NewLayoutData(r, "Unit Management"),
 		Units:  items,
 	}
 
@@ -95,7 +79,7 @@ func (h *Handler) AdminListUnits(w http.ResponseWriter, r *http.Request) error {
 // AdminNewUnit renders the create unit form.
 func (h *Handler) AdminNewUnit(w http.ResponseWriter, r *http.Request) error {
 	data := viewmodel.AdminUnitFormPage{
-		Layout: buildLayoutData(r, "Create Unit"),
+		Layout: h.NewLayoutData(r, "Create Unit"),
 		IsNew:  true,
 		Unit:   viewmodel.AdminUnitFormData{},
 		Errors: nil,
@@ -143,7 +127,7 @@ func (h *Handler) AdminCreateUnit(w http.ResponseWriter, r *http.Request) error 
 
 	if len(errs) > 0 {
 		data := viewmodel.AdminUnitFormPage{
-			Layout: buildLayoutData(r, "Create Unit"),
+			Layout: h.NewLayoutData(r, "Create Unit"),
 			IsNew:  true,
 			Unit:   formData,
 			Errors: errs,
@@ -198,7 +182,7 @@ func (h *Handler) AdminEditUnit(w http.ResponseWriter, r *http.Request) error {
 	}
 
 	data := viewmodel.AdminUnitFormPage{
-		Layout: buildLayoutData(r, "Edit Unit"),
+		Layout: h.NewLayoutData(r, "Edit Unit"),
 		IsNew:  false,
 		Unit: viewmodel.AdminUnitFormData{
 			ID:            unit.ID,
@@ -255,7 +239,7 @@ func (h *Handler) AdminUpdateUnit(w http.ResponseWriter, r *http.Request) error 
 
 	if len(errs) > 0 {
 		data := viewmodel.AdminUnitFormPage{
-			Layout: buildLayoutData(r, "Edit Unit"),
+			Layout: h.NewLayoutData(r, "Edit Unit"),
 			IsNew:  false,
 			Unit:   formData,
 			Errors: errs,

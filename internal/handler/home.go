@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/schliz/convoke/internal/auth"
+	"github.com/schliz/convoke/internal/db"
 	"github.com/schliz/convoke/internal/middleware"
 	"github.com/schliz/convoke/internal/store"
 	"github.com/schliz/convoke/internal/viewmodel"
@@ -38,13 +39,38 @@ func (h *Handler) NewLayoutData(r *http.Request, title string) viewmodel.LayoutD
 		return ld
 	}
 
+	setNavUnits(&ld, units)
+	return ld
+}
+
+// NewLayoutDataWithUnits constructs a LayoutData using pre-fetched units,
+// avoiding a duplicate query when the caller already has the unit list.
+func (h *Handler) NewLayoutDataWithUnits(r *http.Request, title string, units []db.Unit) viewmodel.LayoutData {
+	user := auth.UserFromContext(r.Context())
+	csrfToken := middleware.TokenFromContext(r.Context())
+
+	ld := viewmodel.LayoutData{
+		Title:     title,
+		CSRFToken: csrfToken,
+		UserEmail: "",
+	}
+
+	if user != nil {
+		ld.UserEmail = user.Email
+		ld.IsAdmin = user.IsAdmin
+	}
+
+	setNavUnits(&ld, units)
+	return ld
+}
+
+// setNavUnits populates the Units and HasUnits fields on a LayoutData.
+func setNavUnits(ld *viewmodel.LayoutData, units []db.Unit) {
 	ld.Units = make([]viewmodel.NavUnit, len(units))
 	for i, u := range units {
 		ld.Units[i] = viewmodel.NavUnit{Name: u.Name, Slug: u.Slug}
 	}
 	ld.HasUnits = len(ld.Units) > 0
-
-	return ld
 }
 
 // Home handles the root route. It redirects users with exactly one unit to
@@ -77,7 +103,7 @@ func (h *Handler) Home(w http.ResponseWriter, r *http.Request) error {
 	data := struct {
 		Layout viewmodel.LayoutData
 	}{
-		Layout: h.NewLayoutData(r, "Home"),
+		Layout: h.NewLayoutDataWithUnits(r, "Home", units),
 	}
 	h.Renderer.Page(w, r, "home", data)
 	return nil

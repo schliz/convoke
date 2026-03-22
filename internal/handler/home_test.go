@@ -70,23 +70,15 @@ func TestHome_MultipleUnits_RendersHomePage(t *testing.T) {
 	}
 	defer mock.Close()
 
-	// First call: Home handler checks unit count for redirect logic
-	rows1 := mock.NewRows(unitColumns).
+	// Single query: Home handler fetches units and passes them to
+	// NewLayoutDataWithUnits, avoiding the duplicate query.
+	rows := mock.NewRows(unitColumns).
 		AddRow(int64(1), "Bar Committee", "bar-committee", pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Timestamptz{}, pgtype.Timestamptz{}).
 		AddRow(int64(2), "Kitchen Crew", "kitchen-crew", pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Timestamptz{}, pgtype.Timestamptz{})
 
 	mock.ExpectQuery("SELECT DISTINCT .+ FROM units").
 		WithArgs(pgxmock.AnyArg()).
-		WillReturnRows(rows1)
-
-	// Second call: NewLayoutData loads units for the nav
-	rows2 := mock.NewRows(unitColumns).
-		AddRow(int64(1), "Bar Committee", "bar-committee", pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Timestamptz{}, pgtype.Timestamptz{}).
-		AddRow(int64(2), "Kitchen Crew", "kitchen-crew", pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Timestamptz{}, pgtype.Timestamptz{})
-
-	mock.ExpectQuery("SELECT DISTINCT .+ FROM units").
-		WithArgs(pgxmock.AnyArg()).
-		WillReturnRows(rows2)
+		WillReturnRows(rows)
 
 	s := store.NewWithPool(mock)
 	h := &Handler{
@@ -187,11 +179,9 @@ func TestHome_NonRootPath_Returns404(t *testing.T) {
 		t.Fatal("expected error for non-root path")
 	}
 
-	var notFound *NotFoundError
 	if !isNotFoundError(err) {
 		t.Errorf("expected NotFoundError, got %T: %v", err, err)
 	}
-	_ = notFound
 }
 
 // unitColumns matches the column order used by unit queries.
