@@ -4,7 +4,7 @@ title: Unit management (association admin)
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-22 13:58'
+updated_date: '2026-03-22 14:09'
 labels:
   - fullstack
 milestone: m-1
@@ -33,11 +33,11 @@ Routes should be under /admin/units/.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Association admin can create a new unit with name, slug, and group bindings
-- [ ] #2 Association admin can edit unit properties
-- [ ] #3 Association admin can delete a unit with confirmation
-- [ ] #4 Non-admin users cannot access unit management
-- [ ] #5 Group bindings are stored in the unit_group_bindings table
+- [x] #1 Association admin can create a new unit with name, slug, and group bindings
+- [x] #2 Association admin can edit unit properties
+- [x] #3 Association admin can delete a unit with confirmation
+- [x] #4 Non-admin users cannot access unit management
+- [x] #5 Group bindings are stored in the unit_group_bindings table
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -363,3 +363,21 @@ Validation logic lives in the handler. Collect errors into a `map[string]string`
 9. `templates/components/nav.html` -- Add admin link (optional, minor)
 10. Tests for handlers and store methods
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation Notes (2026-03-22)
+
+All acceptance criteria implemented:
+- RequireAdmin middleware in `internal/auth/require_admin.go`
+- CreateUnitWithBindings / UpdateUnitWithBindings in `internal/store/unit.go`
+- View models in `internal/viewmodel/admin_units.go`
+- 6 handler methods in `internal/handler/admin_units.go`
+- List page template `templates/pages/admin_units.html` (div-based layout per CLAUDE.md)
+- Form page template `templates/pages/admin_unit_form.html` (shared create/edit)
+- Routes registered in `cmd/server/main.go` under `/admin/units/`
+- Tests: 4 auth tests, 6 store tests, 22 handler utility tests
+- `go build ./...` and `go vet ./...` pass clean
+- All 90+ tests pass
+<!-- SECTION:NOTES:END -->
