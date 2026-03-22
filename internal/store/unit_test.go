@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pashagolub/pgxmock/v5"
+	"github.com/schliz/convoke/internal/db"
 )
 
 // unitColumns defines the column names returned by unit queries, matching the
@@ -594,6 +595,278 @@ func TestIsUnitAdmin_AssocAdminWithEmptyGroups(t *testing.T) {
 	}
 	if !result {
 		t.Error("expected true for assoc admin with empty groups, got false")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// --- CreateUnitWithBindings ---
+
+func TestCreateUnitWithBindings_CreatesUnitAndBindings(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.CreateUnitParams{
+		Name:         "Fire Brigade",
+		Slug:         "fire-brigade",
+		Description:  pgtype.Text{String: "The fire brigade", Valid: true},
+		LogoPath:     pgtype.Text{},
+		ContactEmail: pgtype.Text{String: "fire@example.com", Valid: true},
+		AdminGroup:   pgtype.Text{String: "fire-admins", Valid: true},
+	}
+	bindings := []string{"fire-fighters", "fire-volunteers"}
+
+	mock.ExpectBegin()
+
+	rows := mock.NewRows(unitColumns).
+		AddRow(int64(1), "Fire Brigade", "fire-brigade",
+			pgtype.Text{String: "The fire brigade", Valid: true},
+			pgtype.Text{},
+			pgtype.Text{String: "fire@example.com", Valid: true},
+			pgtype.Text{String: "fire-admins", Valid: true},
+			pgtype.Timestamptz{}, pgtype.Timestamptz{})
+
+	mock.ExpectQuery("INSERT INTO units").
+		WithArgs(params.Name, params.Slug, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnRows(rows)
+
+	mock.ExpectExec("INSERT INTO unit_group_bindings").
+		WithArgs(int64(1), "fire-fighters").
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectExec("INSERT INTO unit_group_bindings").
+		WithArgs(int64(1), "fire-volunteers").
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	mock.ExpectCommit()
+
+	s := NewWithPool(mock)
+	unit, err := s.CreateUnitWithBindings(context.Background(), params, bindings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if unit.ID != 1 {
+		t.Errorf("expected ID 1, got %d", unit.ID)
+	}
+	if unit.Name != "Fire Brigade" {
+		t.Errorf("expected name 'Fire Brigade', got %q", unit.Name)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestCreateUnitWithBindings_NoBindings(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.CreateUnitParams{
+		Name: "Solo Unit",
+		Slug: "solo-unit",
+	}
+
+	mock.ExpectBegin()
+
+	rows := mock.NewRows(unitColumns).
+		AddRow(int64(2), "Solo Unit", "solo-unit",
+			pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{},
+			pgtype.Timestamptz{}, pgtype.Timestamptz{})
+
+	mock.ExpectQuery("INSERT INTO units").
+		WithArgs(params.Name, params.Slug, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnRows(rows)
+
+	mock.ExpectCommit()
+
+	s := NewWithPool(mock)
+	unit, err := s.CreateUnitWithBindings(context.Background(), params, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if unit.Name != "Solo Unit" {
+		t.Errorf("expected name 'Solo Unit', got %q", unit.Name)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestCreateUnitWithBindings_RollsBackOnBindingError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.CreateUnitParams{
+		Name: "Fail Unit",
+		Slug: "fail-unit",
+	}
+
+	mock.ExpectBegin()
+
+	rows := mock.NewRows(unitColumns).
+		AddRow(int64(3), "Fail Unit", "fail-unit",
+			pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{},
+			pgtype.Timestamptz{}, pgtype.Timestamptz{})
+
+	mock.ExpectQuery("INSERT INTO units").
+		WithArgs(params.Name, params.Slug, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnRows(rows)
+
+	mock.ExpectExec("INSERT INTO unit_group_bindings").
+		WithArgs(int64(3), "bad-group").
+		WillReturnError(fmt.Errorf("constraint violation"))
+
+	mock.ExpectRollback()
+
+	s := NewWithPool(mock)
+	_, err = s.CreateUnitWithBindings(context.Background(), params, []string{"bad-group"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+// --- UpdateUnitWithBindings ---
+
+func TestUpdateUnitWithBindings_UpdatesUnitAndReplacesBindings(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.UpdateUnitParams{
+		ID:           1,
+		Name:         "Updated Brigade",
+		Description:  pgtype.Text{String: "Updated desc", Valid: true},
+		LogoPath:     pgtype.Text{},
+		ContactEmail: pgtype.Text{String: "new@example.com", Valid: true},
+		AdminGroup:   pgtype.Text{String: "fire-admins", Valid: true},
+	}
+	bindings := []string{"new-group-a", "new-group-b"}
+
+	mock.ExpectBegin()
+
+	rows := mock.NewRows(unitColumns).
+		AddRow(int64(1), "Updated Brigade", "fire-brigade",
+			pgtype.Text{String: "Updated desc", Valid: true},
+			pgtype.Text{},
+			pgtype.Text{String: "new@example.com", Valid: true},
+			pgtype.Text{String: "fire-admins", Valid: true},
+			pgtype.Timestamptz{}, pgtype.Timestamptz{})
+
+	mock.ExpectQuery("UPDATE units SET").
+		WithArgs(params.ID, params.Name, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnRows(rows)
+
+	mock.ExpectExec("DELETE FROM unit_group_bindings WHERE unit_id = \\$1").
+		WithArgs(int64(1)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 2))
+
+	mock.ExpectExec("INSERT INTO unit_group_bindings").
+		WithArgs(int64(1), "new-group-a").
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+	mock.ExpectExec("INSERT INTO unit_group_bindings").
+		WithArgs(int64(1), "new-group-b").
+		WillReturnResult(pgxmock.NewResult("INSERT", 1))
+
+	mock.ExpectCommit()
+
+	s := NewWithPool(mock)
+	unit, err := s.UpdateUnitWithBindings(context.Background(), params, bindings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if unit.Name != "Updated Brigade" {
+		t.Errorf("expected name 'Updated Brigade', got %q", unit.Name)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestUpdateUnitWithBindings_ClearsBindingsWhenEmpty(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.UpdateUnitParams{
+		ID:   1,
+		Name: "No Bindings Unit",
+	}
+
+	mock.ExpectBegin()
+
+	rows := mock.NewRows(unitColumns).
+		AddRow(int64(1), "No Bindings Unit", "fire-brigade",
+			pgtype.Text{}, pgtype.Text{}, pgtype.Text{}, pgtype.Text{},
+			pgtype.Timestamptz{}, pgtype.Timestamptz{})
+
+	mock.ExpectQuery("UPDATE units SET").
+		WithArgs(params.ID, params.Name, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnRows(rows)
+
+	mock.ExpectExec("DELETE FROM unit_group_bindings WHERE unit_id = \\$1").
+		WithArgs(int64(1)).
+		WillReturnResult(pgxmock.NewResult("DELETE", 2))
+
+	mock.ExpectCommit()
+
+	s := NewWithPool(mock)
+	unit, err := s.UpdateUnitWithBindings(context.Background(), params, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if unit.Name != "No Bindings Unit" {
+		t.Errorf("expected name 'No Bindings Unit', got %q", unit.Name)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unfulfilled expectations: %v", err)
+	}
+}
+
+func TestUpdateUnitWithBindings_RollsBackOnUpdateError(t *testing.T) {
+	mock, err := pgxmock.NewPool()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mock.Close()
+
+	params := db.UpdateUnitParams{
+		ID:   999,
+		Name: "Nonexistent",
+	}
+
+	mock.ExpectBegin()
+
+	mock.ExpectQuery("UPDATE units SET").
+		WithArgs(params.ID, params.Name, params.Description, params.LogoPath, params.ContactEmail, params.AdminGroup).
+		WillReturnError(pgx.ErrNoRows)
+
+	mock.ExpectRollback()
+
+	s := NewWithPool(mock)
+	_, err = s.UpdateUnitWithBindings(context.Background(), params, []string{"group-a"})
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 
 	if err := mock.ExpectationsWereMet(); err != nil {

@@ -2,6 +2,9 @@ package store
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/schliz/convoke/internal/db"
 )
@@ -86,6 +89,74 @@ func IsUnitMember(ctx context.Context, dbtx db.DBTX, unitID int64, userGroups []
 		)
 	`, unitID, userGroups).Scan(&isMember)
 	return isMember, err
+}
+
+// CreateUnitWithBindings inserts a new unit and its group bindings in a
+// transaction. Returns the created unit. Follows the same transactional
+// pattern as CreateCalendarWithViewers.
+func (s *Store) CreateUnitWithBindings(
+	ctx context.Context,
+	params db.CreateUnitParams,
+	groupBindings []string,
+) (db.Unit, error) {
+	var unit db.Unit
+
+	err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+		var txErr error
+		unit, txErr = q.CreateUnit(ctx, params)
+		if txErr != nil {
+			return fmt.Errorf("create unit: %w", txErr)
+		}
+
+		for _, g := range groupBindings {
+			if txErr = q.InsertUnitGroupBinding(ctx, db.InsertUnitGroupBindingParams{
+				UnitID:    unit.ID,
+				GroupName: g,
+			}); txErr != nil {
+				return fmt.Errorf("insert group binding: %w", txErr)
+			}
+		}
+
+		return nil
+	})
+
+	return unit, err
+}
+
+// UpdateUnitWithBindings updates a unit and replaces its group bindings in a
+// transaction. Always clears existing bindings, then re-inserts the new set.
+// Returns the updated unit.
+func (s *Store) UpdateUnitWithBindings(
+	ctx context.Context,
+	params db.UpdateUnitParams,
+	groupBindings []string,
+) (db.Unit, error) {
+	var unit db.Unit
+
+	err := s.WithTx(ctx, func(tx pgx.Tx, q *db.Queries) error {
+		var txErr error
+		unit, txErr = q.UpdateUnit(ctx, params)
+		if txErr != nil {
+			return fmt.Errorf("update unit: %w", txErr)
+		}
+
+		if txErr = q.DeleteUnitGroupBindings(ctx, unit.ID); txErr != nil {
+			return fmt.Errorf("delete group bindings: %w", txErr)
+		}
+
+		for _, g := range groupBindings {
+			if txErr = q.InsertUnitGroupBinding(ctx, db.InsertUnitGroupBindingParams{
+				UnitID:    unit.ID,
+				GroupName: g,
+			}); txErr != nil {
+				return fmt.Errorf("insert group binding: %w", txErr)
+			}
+		}
+
+		return nil
+	})
+
+	return unit, err
 }
 
 // IsUnitAdmin checks if the user is an admin for the given unit. A user is
