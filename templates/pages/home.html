@@ -1,0 +1,28 @@
+{{ define "content" }}
+<div class="container mx-auto p-8">
+    <h1 class="text-2xl font-bold mb-6">Welcome to Convoke</h1>
+    {{ if .Layout.HasUnits }}
+    <h2 class="text-lg font-semibold mb-4">Your Units</h2>
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {{ range .Layout.Units }}
+        <a href="/units/{{ .Slug }}" class="card bg-base-200 shadow-sm hover:shadow-md transition-shadow">
+            <div class="card-body">
+                <h3 class="card-title">
+                    <span class="material-symbols-outlined text-primary">group</span>
+                    {{ .Name }}
+                </h3>
+                <div class="card-actions justify-end">
+                    <span class="material-symbols-outlined text-sm opacity-50">arrow_forward</span>
+                </div>
+            </div>
+        </a>
+        {{ end }}
+    </div>
+    {{ else }}
+    <div class="alert">
+        <span class="material-symbols-outlined">info</span>
+        <span>You are not a member of any units yet. Contact your organization's admin to get assigned.</span>
+    </div>
+    {{ end }}
+</div>
+{{ end }}

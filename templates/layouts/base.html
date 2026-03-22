@@ -27,8 +27,19 @@
     </script>
 </head>
 <body class="min-h-screen bg-base-100 font-['Public_Sans',sans-serif]">
-    {{ template "nav" .Layout }}
-    <main>{{ template "content" . }}</main>
+    <div class="drawer">
+        <input id="nav-drawer" type="checkbox" class="drawer-toggle" />
+        <div class="drawer-content flex flex-col">
+            {{ template "nav" .Layout }}
+            <main>{{ template "content" . }}</main>
+        </div>
+        <div class="drawer-side z-50">
+            <label for="nav-drawer" aria-label="close sidebar" class="drawer-overlay"></label>
+            <div class="bg-base-200 min-h-full w-72">
+                {{ template "nav-sidebar" .Layout }}
+            </div>
+        </div>
+    </div>
     <div id="modal" style="display:none"></div>
     <div id="toast-zone" class="toast toast-end toast-top z-50"></div>
     <script>

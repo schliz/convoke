@@ -26,6 +26,12 @@ func UserFromContext(ctx context.Context) *RequestUser {
 	return u
 }
 
+// ContextWithUser stores a RequestUser in the context. This is exported for
+// use in tests and in handler helpers that need to inject a user.
+func ContextWithUser(ctx context.Context, user *RequestUser) context.Context {
+	return context.WithValue(ctx, contextKey{}, user)
+}
+
 // Middleware extracts user identity from reverse-proxy headers, upserts
 // the user into the database via sqlc, and stores a RequestUser in the
 // request context.
