@@ -1,10 +1,10 @@
 ---
 id: TASK-019
 title: Attendance store methods
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-16 14:34'
-updated_date: '2026-03-21 22:42'
+updated_date: '2026-03-22 13:37'
 labels:
   - backend
 milestone: m-4
