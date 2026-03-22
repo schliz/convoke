@@ -1,0 +1,13 @@
+services:
+  mock-oauth2-proxy:
+    image: ghcr.io/schliz/mock-oauth2-proxy:latest
+    network_mode: host
+    environment:
+      MOCK_UPSTREAM: "http://127.0.0.1:8080"
+      MOCK_LISTEN_ADDR: ":4180"
+      MOCK_USERS: |
+        [
+          {"id": "admin", "email": "admin@example.com", "groups": ["admin", "editors"]},
+          {"id": "member", "email": "member@example.com", "groups": ["editors"]},
+          {"id": "viewer", "email": "viewer@example.com", "groups": []}
+        ]

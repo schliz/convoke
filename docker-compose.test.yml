@@ -17,7 +17,6 @@ services:
     environment:
       DATABASE_URL: postgres://convoke:convoke@postgres:5432/convoke?sslmode=disable
       LISTEN_ADDR: ":8080"
-      DEV_MODE: "true"
       ADMIN_GROUP: admin
       CSRF_SECRET: test-secret
       GOCOVERDIR: /coverage
@@ -27,4 +26,18 @@ services:
       postgres:
         condition: service_started
 
-  # TODO: Add Keycloak and oauth2-proxy for full e2e auth testing
+  mock-oauth2-proxy:
+    image: ghcr.io/schliz/mock-oauth2-proxy:latest
+    ports:
+      - "4180:4180"
+    environment:
+      MOCK_UPSTREAM: "http://app:8080"
+      MOCK_LISTEN_ADDR: ":4180"
+      MOCK_USERS: |
+        [
+          {"id": "admin", "email": "admin@example.com", "groups": ["admin", "editors"]},
+          {"id": "member", "email": "member@example.com", "groups": ["editors"]}
+        ]
+    depends_on:
+      app:
+        condition: service_started

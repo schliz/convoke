@@ -28,15 +28,18 @@ func isValidSlug(slug string) bool {
 }
 
 // parseGroupBindings filters, trims, and deduplicates group binding values
-// from form input.
+// from form input. Each value is also split on commas so users can enter
+// multiple groups in a single field (e.g. "admin, editors").
 func parseGroupBindings(raw []string) []string {
 	seen := make(map[string]bool)
 	var result []string
-	for _, g := range raw {
-		g = strings.TrimSpace(g)
-		if g != "" && !seen[g] {
-			seen[g] = true
-			result = append(result, g)
+	for _, field := range raw {
+		for part := range strings.SplitSeq(field, ",") {
+			g := strings.TrimSpace(part)
+			if g != "" && !seen[g] {
+				seen[g] = true
+				result = append(result, g)
+			}
 		}
 	}
 	return result

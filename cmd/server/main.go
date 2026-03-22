@@ -67,7 +67,7 @@ func main() {
 	base := middleware.Chain(
 		middleware.Logging(),
 		middleware.Recovery(),
-		auth.Middleware(s, cfg.AdminGroup, cfg.DevMode),
+		auth.Middleware(s, cfg.AdminGroup),
 	)
 
 	csrfSecret := cfg.CSRFSecret

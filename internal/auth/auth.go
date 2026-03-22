@@ -32,39 +32,24 @@ func ContextWithUser(ctx context.Context, user *RequestUser) context.Context {
 	return context.WithValue(ctx, contextKey{}, user)
 }
 
-// Middleware extracts user identity from reverse-proxy headers, upserts
+// Middleware extracts user identity from oauth2-proxy headers, upserts
 // the user into the database via sqlc, and stores a RequestUser in the
 // request context.
 //
-// Header mapping:
+// Header mapping (set by oauth2-proxy / mock-oauth2-proxy):
 //
-//	X-Forwarded-User              -> idp_subject (OIDC sub claim)
-//	X-Forwarded-Email             -> email
-//	X-Forwarded-Preferred-Username -> username
-//	X-Forwarded-Groups            -> groups (comma-separated)
+//	X-Auth-Request-User               -> idp_subject (OIDC sub claim)
+//	X-Auth-Request-Email              -> email
+//	X-Auth-Request-Preferred-Username -> username
+//	X-Auth-Request-Groups             -> groups (comma-separated)
 //
 // display_name is derived from username, falling back to the email prefix.
 // is_assoc_admin is determined by checking if adminGroup is in the groups
 // list BEFORE calling UpsertUser.
-//
-// In dev mode, a fake admin user is injected when no identity headers are
-// present.
-func Middleware(s *store.Store, adminGroup string, devMode bool) middleware.Middleware {
+func Middleware(s *store.Store, adminGroup string) middleware.Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			idpSubject := r.Header.Get("X-Forwarded-User")
-
-			if idpSubject == "" && devMode {
-				// Dev bypass: inject fake admin user with valid fields
-				ctx := context.WithValue(r.Context(), contextKey{}, &RequestUser{
-					ID:      0,
-					Email:   "dev@localhost",
-					IsAdmin: true,
-					Groups:  []string{adminGroup},
-				})
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
+			idpSubject := r.Header.Get("X-Auth-Request-User")
 
 			if idpSubject == "" {
 				if r.Header.Get("HX-Request") == "true" {
@@ -76,9 +61,9 @@ func Middleware(s *store.Store, adminGroup string, devMode bool) middleware.Midd
 				return
 			}
 
-			email := r.Header.Get("X-Forwarded-Email")
-			username := r.Header.Get("X-Forwarded-Preferred-Username")
-			groups := parseGroups(r.Header.Get("X-Forwarded-Groups"))
+			email := r.Header.Get("X-Auth-Request-Email")
+			username := r.Header.Get("X-Auth-Request-Preferred-Username")
+			groups := parseGroups(r.Header.Get("X-Auth-Request-Groups"))
 
 			// Derive display_name from username, falling back to email prefix.
 			displayName := username

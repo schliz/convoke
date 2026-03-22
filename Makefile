@@ -9,9 +9,17 @@ css-watch:
 build: css
 	go build -o bin/convoke ./cmd/server
 
-dev:
+dev: dev-infra css
 	npx @tailwindcss/cli -i static/css/input.css -o static/css/styles.css --watch &
-	DEV_MODE=true go run ./cmd/server
+	CSS_PID=$$!; \
+	trap 'kill $$CSS_PID 2>/dev/null' EXIT INT TERM; \
+	go run github.com/air-verse/air@latest
+
+dev-infra:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres mock-oauth2-proxy
+
+dev-down:
+	docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 
 run:
 	go run ./cmd/server

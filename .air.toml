@@ -1,0 +1,9 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/convoke ./cmd/server"
+  bin = "./tmp/convoke"
+  include_ext = ["go", "html", "sql"]
+  exclude_dir = ["tmp", "node_modules", "e2e", "bin", "coverage", "docs", ".claude"]
+  delay = 1000
