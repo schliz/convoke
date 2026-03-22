@@ -1,10 +1,10 @@
 ---
 id: TASK-004
 title: Unit store methods and membership resolution
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-21 22:39'
+updated_date: '2026-03-22 13:37'
 labels:
   - backend
 milestone: m-1
