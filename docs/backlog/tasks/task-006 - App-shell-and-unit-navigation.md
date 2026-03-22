@@ -4,7 +4,7 @@ title: App shell and unit navigation
 status: In Progress
 assignee: []
 created_date: '2026-03-16 14:31'
-updated_date: '2026-03-22 13:58'
+updated_date: '2026-03-22 14:07'
 labels:
   - fullstack
 milestone: m-1
@@ -36,12 +36,12 @@ Follow the component-oriented template architecture: typed view model structs, p
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Navigation displays units the current user belongs to
-- [ ] #2 User can navigate between different units
-- [ ] #3 Admin link visible only to association admins
-- [ ] #4 Theme toggle preserved from existing nav
-- [ ] #5 Root route redirects to a sensible default page
-- [ ] #6 LayoutData view model extended with units and admin status
+- [x] #1 Navigation displays units the current user belongs to
+- [x] #2 User can navigate between different units
+- [x] #3 Admin link visible only to association admins
+- [x] #4 Theme toggle preserved from existing nav
+- [x] #5 Root route redirects to a sensible default page
+- [x] #6 LayoutData view model extended with units and admin status
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -472,3 +472,28 @@ Per the project's architecture skill, Playwright e2e tests are the primary testi
 
 5. **Should the root route require authentication?** Currently `/` redirects without auth. With the new home handler going through the `base` middleware chain (which includes auth), unauthenticated users will get a 401. This is correct -- Convoke has no public pages. The reverse proxy (oauth2-proxy) handles the login redirect before requests reach Convoke.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation Notes (2026-03-22)
+
+All 6 acceptance criteria implemented:
+
+1. Nav displays units via `LayoutData.Units` populated by `NewLayoutData` calling `ListUnitsByUserGroups`
+2. Unit links in navbar dropdown (desktop) and drawer sidebar (mobile) navigate to `/units/{slug}`
+3. Admin link (`/admin/units/`) visible only when `IsAdmin` is true, in both desktop navbar and mobile drawer
+4. Theme toggle preserved exactly as-is (convoke-light/convoke-dark via localStorage)
+5. Root `/` redirects to `/units/{slug}` for single-unit users, renders unit listing for multi/no-unit users
+6. `LayoutData` extended with `Units []NavUnit`, `HasUnits bool`
+
+Additional work:
+- Added `auth.ContextWithUser()` for test injection
+- Created `NewLayoutData` helper on Handler
+- Created `Home` and `UnitDashboard` handlers
+- Created `home.html` and `unit_placeholder.html` page templates
+- Rebuilt `nav.html` with `nav` and `nav-sidebar` blocks
+- Rebuilt `base.html` with DaisyUI drawer layout
+- Registered `/` and `/units/{slug}` routes in main.go
+- 4 handler unit tests for Home redirect logic
+<!-- SECTION:NOTES:END -->
