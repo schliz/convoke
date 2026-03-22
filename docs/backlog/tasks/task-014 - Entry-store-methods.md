@@ -1,10 +1,10 @@
 ---
 id: TASK-014
 title: Entry store methods
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-16 14:33'
-updated_date: '2026-03-21 22:45'
+updated_date: '2026-03-22 13:37'
 labels:
   - backend
 milestone: m-3
