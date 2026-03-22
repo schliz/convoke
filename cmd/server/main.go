@@ -78,7 +78,6 @@ func main() {
 		base,
 		middleware.CSRF(csrfSecret),
 	)
-	_ = withCSRF // will be used when mutation routes are added
 
 	// 9. Routes
 	mux := http.NewServeMux()
@@ -110,6 +109,14 @@ func main() {
 
 	// Unit placeholder — will be replaced by the full unit dashboard
 	mux.Handle("GET /units/{slug}", base(h.Wrap(h.UnitDashboard)))
+
+	// Admin unit management routes
+	mux.Handle("GET /admin/units/", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminListUnits))))
+	mux.Handle("GET /admin/units/new", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminNewUnit))))
+	mux.Handle("POST /admin/units/", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminCreateUnit))))
+	mux.Handle("GET /admin/units/{id}/edit", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminEditUnit))))
+	mux.Handle("POST /admin/units/{id}", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminUpdateUnit))))
+	mux.Handle("DELETE /admin/units/{id}", withCSRF(auth.RequireAdmin(h.Wrap(h.AdminDeleteUnit))))
 
 	// 10. Server
 	srv := &http.Server{
